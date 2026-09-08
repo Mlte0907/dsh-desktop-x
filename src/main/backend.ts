@@ -55,13 +55,31 @@ async function systemdUnitEnabled(): Promise<boolean> {
   }
 }
 
-async function systemdUnitActive(): Promise<boolean> {
+async function unitIsActive(unit: string): Promise<boolean> {
   try {
-    const { code } = await systemctl(['--user', 'is-active', C.SYSTEMD_UNIT])
+    const { code } = await systemctl(['--user', 'is-active', unit])
     return code === 0
   } catch {
     return false
   }
+}
+
+/**
+ * The unit the backend is actually running under, if any.
+ *
+ * A pre-rename install still runs the live backend as `dsh-web.service` until
+ * its next restart. Checking both names keeps the status label honest and —
+ * more importantly — lets `stop()` reach the real backend; otherwise restart
+ * would find the port still busy and silently reuse the old process.
+ */
+async function activeSystemdUnit(): Promise<string | undefined> {
+  if (await unitIsActive(C.SYSTEMD_UNIT)) return C.SYSTEMD_UNIT
+  if (await unitIsActive(C.LEGACY_SYSTEMD_UNIT)) return C.LEGACY_SYSTEMD_UNIT
+  return undefined
+}
+
+async function systemdUnitActive(): Promise<boolean> {
+  return (await activeSystemdUnit()) !== undefined
 }
 
 function pidAlive(pid: number): boolean {
@@ -460,7 +478,8 @@ export class BackendManager extends EventEmitter {
         /* already gone */
       }
     }
-    if (await systemdUnitActive()) await systemctl(['--user', 'stop', C.SYSTEMD_UNIT])
+    const activeUnit = await activeSystemdUnit()
+    if (activeUnit !== undefined) await systemctl(['--user', 'stop', activeUnit])
     await this.pruneLog()
     this.setStatus({ phase: 'offline', ownership: 'none', detail: '后端已停止', pid: undefined })
   }

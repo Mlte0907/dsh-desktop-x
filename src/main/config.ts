@@ -54,6 +54,14 @@ export const BACKEND_STATE = join(STATE_DIR, 'backend.json')
 /** systemd user unit name (see scripts/install-system.sh). */
 export const SYSTEMD_UNIT = 'dsh-desktop-x.service'
 
+/**
+ * Pre-rename unit name. An install that has not restarted its backend since
+ * the dsh-xuanyuan-desktop → dsh-desktop-x rename still runs the live backend
+ * under this name, so status and stop must honour it until the handover
+ * happens on the next backend restart.
+ */
+export const LEGACY_SYSTEMD_UNIT = 'dsh-web.service'
+
 export const BACKEND_HOST = env('DSH_WEB_HOST', '127.0.0.1')
 
 /**
