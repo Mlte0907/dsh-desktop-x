@@ -1,4 +1,4 @@
-# dsh-xuanyuan-desktop 实测问题清单
+# dsh-desktop-x 实测问题清单
 
 > 测试时间：2026-09-01
 > 测试环境：aarch64 Linux / XFCE / Electron 44.1.0 / 后端 node 独立进程
@@ -19,7 +19,7 @@
 ### 2. 快捷键唤回出现退化窗口
 
 - **现象**：`Super+Shift+D` 隐藏方向正常（窗口消失，进程留存）。再次按键唤回时，X 窗口树中出现 `200x200 @ 0,0` 的 "electron" 类窗口，屏幕上呈现为空壳（透出其后方的其他窗口），未见恢复到保存的 1290x864 @ 274,100 边界。
-- **旁证**：`~/.config/dsh-xuanyuan-desktop/window-bounds.json` 中保存的边界值本身是正确的。
+- **旁证**：`~/.config/dsh-desktop-x/window-bounds.json` 中保存的边界值本身是正确的。
 - **待区分**：合成按键（xdotool）与真实键盘的行为可能不同，需真键盘复测确认。
 - **验证方式**：窗口树快照（xwininfo -root -tree）+ 分窗口截图识图。
 

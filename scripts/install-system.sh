@@ -37,7 +37,7 @@ fi
 if [ ! -x "$NODE_BIN" ]; then echo "找不到 node：$NODE_BIN" >&2; exit 1; fi
 if [ ! -f "$HARNESS_ROOT/apps/cli/lib/bin.js" ]; then echo "找不到 dsh bin：$HARNESS_ROOT/apps/cli/lib/bin.js" >&2; exit 1; fi
 
-echo "→ 编译 dsh-xuanyuan-desktop"
+echo "→ 编译 dsh-desktop-x"
 (cd "$ROOT" && npm run build)
 
 echo "→ 写入 .desktop 启动器"

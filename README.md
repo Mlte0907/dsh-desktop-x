@@ -1,4 +1,4 @@
-# dsh-xuanyuan-desktop
+# dsh-desktop-x
 
 Codex-style desktop shell for `dsh web`: a frameless window that loads the
 local DeepSeek Harness web UI, lives in the system tray, and keeps the
@@ -70,7 +70,7 @@ is requested with no cookie. The shell solves this without asking the user:
    backend restart — reconnects with one request instead of a token exchange.
 
 This was validated live: the cookie file appears at
-`~/.config/dsh-xuanyuan-desktop/Partitions/dsh/Cookies` after the first
+`~/.config/dsh-desktop-x/Partitions/dsh/Cookies` after the first
 successful connect.
 
 ### Why an `<iframe>` and not a `<webview>` — and the cookie it would not send
@@ -105,7 +105,7 @@ backend the user started themselves is never killed.
 ## Build & run
 
 ```bash
-cd /home/xiaoxin/dsh-xuanyuan-desktop
+cd /home/xiaoxin/dsh-desktop-x
 npm install                    # Electron downloads via npmmirror (set ELECTRON_MIRROR)
 npm run build                  # tsc + assets copy
 npm start                      # build + launch
@@ -212,8 +212,8 @@ already-running backend (no restart, no token exchange).
 The tray item "退出前端并释放内存（后端继续运行）" — or from any shell:
 
 ```bash
-/path/to/dsh-xuanyuan-desktop/node_modules/electron/dist/electron \
-  /path/to/dsh-xuanyuan-desktop --quit
+/path/to/dsh-desktop-x/node_modules/electron/dist/electron \
+  /path/to/dsh-desktop-x --quit
 ```
 
 terminates the whole Electron tree (measured: 9 processes → 0, ~550 MB

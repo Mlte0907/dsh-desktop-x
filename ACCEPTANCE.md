@@ -1,8 +1,8 @@
-# dsh-xuanyuan-desktop 验收文档
+# dsh-desktop-x 验收文档
 
 > 版本：v0.2（2026-09-01）
 > 环境：Armbian 26.8.3 noble / aarch64 / XFCE 4.18 + X11 / Electron 44.1.0
-> 项目根：`/home/xiaoxin/dsh-xuanyuan-desktop`
+> 项目根：`/home/xiaoxin/dsh-desktop-x`
 > 本文供验收方逐项执行验证命令并对照预期结果。全部命令可在任意终端执行，
 > 涉及 GUI 的需要 `DISPLAY=:0`。
 
@@ -72,7 +72,7 @@ done
 
 ```bash
 # 预期：后端停止；前端仍在
-cd /home/xiaoxin/dsh-xuanyuan-desktop
+cd /home/xiaoxin/dsh-desktop-x
 E=$PWD/node_modules/electron/dist/electron R=$PWD
 DISPLAY=:0 $E $R --quit 2>/dev/null; sleep 2   # 先确保壳在跑（重新启动它）
 DISPLAY=:0 nohup $E $R >/dev/null 2>&1 & sleep 12
@@ -111,8 +111,8 @@ close-preventDefault 拦下 → shutdown 卡死，9 进程残留 ~550MB。
 放行 close；外部退出走 `--quit` CLI（经 second-instance 转发）。
 
 ```bash
-E=/home/xiaoxin/dsh-xuanyuan-desktop/node_modules/electron/dist/electron
-R=/home/xiaoxin/dsh-xuanyuan-desktop
+E=/home/xiaoxin/dsh-desktop-x/node_modules/electron/dist/electron
+R=/home/xiaoxin/dsh-desktop-x
 DISPLAY=:0 nohup $E $R >/dev/null 2>&1 & sleep 12
 DISPLAY=:0 $E $R --quit; sleep 4
 pgrep -cf "$R" || echo 0   # 预期：0（全部收割）
@@ -239,7 +239,7 @@ const filter = { urls: [`${base}/*`, `${base.replace(/^http/, 'ws')}/*`] }
 E=.../node_modules/electron/dist/electron; R=<项目根>
 DISPLAY=:0 $E $R >/dev/null 2>&1 & sleep 12      # 先起一个实例
 DISPLAY=:0 $E $R --quit; sleep 4
-pgrep -cf dsh-xuanyuan-desktop                    # 预期：0
+pgrep -cf dsh-desktop-x                    # 预期：0
 systemctl --user is-active dsh-web.service        # 预期：active
 ```
 
@@ -301,7 +301,7 @@ systemctl --user is-active dsh-web.service        # 预期：active
 1. **真键盘快捷键对照**：issues #2 与本项目全部测试均为 xdotool 合成输入。
    请用真键盘按 `Super+Shift+D` 数次，确认隐藏/唤回正常、无 200×200 空壳。
 2. **真鼠标托盘交互**：点击托盘蓝鲸图标 → 菜单各项（打开/日志/重启/停止/退出）
-   逐一点击确认；确认"退出前端并释放内存"后 `pgrep -cf dsh-xuanyuan-desktop` 为 0。
+   逐一点击确认；确认"退出前端并释放内存"后 `pgrep -cf dsh-desktop-x` 为 0。
 3. **真鼠标工作区选择**：首次在桌面壳内选择工作区，确认 8 个历史会话出现，
    且重启桌面壳后选择被记住（localStorage 持久性）。
 
@@ -331,7 +331,7 @@ systemctl --user is-active dsh-web.service        # 预期：active
 
 ## 八、验收清单（逐项打勾）
 
-- [ ] `--quit` 后 `pgrep -cf dsh-xuanyuan-desktop` = 0，后端仍 active
+- [ ] `--quit` 后 `pgrep -cf dsh-desktop-x` = 0，后端仍 active
       （2026-09-02 验收实测：后端 active ✓，前端 11 进程残留 ✗——见新发现 H，修后复测）
 - [ ] 冷启动 3 次，每次窗口 <1.5s、截图无黑屏（~275KB 档）、401=0
 - [ ] 托盘图标四态正确切换（停止后端 → 灰；重启 → 绿）
@@ -378,7 +378,7 @@ systemctl --user is-active dsh-web.service        # 预期：active
 ### 9.4 测试方法沉淀（本轮验证有效）
 
 9. **GUI 视觉回归链路**：最小化遮挡窗（ZCode）→ 按窗口类
-   （`dsh-xuanyuan-desktop`，注意不是 `electron`——那是 10x10/200x200 辅助窗）
+   （`dsh-desktop-x`，注意不是 `electron`——那是 10x10/200x200 辅助窗）
    激活目标窗 → 全屏截图按窗口几何裁剪 → 识图对比。每轮迭代跑一遍
    首屏/托盘态/唤回三张，防止「computed style 对了但画面不对」类的盲区。
 10. **冷启动验收脚本**：ACCEPTANCE.md 新发现 B 的三连重启 + 截图字节数判据
