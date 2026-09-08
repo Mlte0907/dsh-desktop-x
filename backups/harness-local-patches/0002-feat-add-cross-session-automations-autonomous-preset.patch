@@ -1,0 +1,2852 @@
+From a78ace4abb70d7f0cdd375c01dc3d5b45338cff5 Mon Sep 17 00:00:00 2001
+From: xiaoxin <xiaoxin@deepseek-harness.local>
+Date: Mon, 31 Aug 2026 16:05:14 +0800
+Subject: [PATCH 2/6] feat: add cross-session automations, autonomous preset,
+ compat shim, plan-mode tool
+
+New packages:
+- schedule/automations: cross-session scheduled tasks (after/at/every)
+  with persistence, missed-run merging, and failure tracking.
+  Tools: automation_create, automation_list, automation_cancel.
+  Tests: 12/12 passing.
+- preset/autonomous: agent preset for autonomous operation with pangu MCP.
+- compat/dsh-compat-shim: backward-compat shim for web profile bundle.
+- plan/tool-plan-mode: model-initiated plan mode entry tool.
+---
+ .../compat/dsh-compat-shim/README.i18n.yaml   |   6 +
+ packages/compat/dsh-compat-shim/README.md     |  50 ++
+ packages/compat/dsh-compat-shim/README.zh.md  |  50 ++
+ .../compat/dsh-compat-shim/cordis.patch.yml   |   5 +
+ packages/compat/dsh-compat-shim/package.json  |  61 +++
+ packages/compat/dsh-compat-shim/src/client.ts |  19 +
+ packages/compat/dsh-compat-shim/src/index.ts  | 175 +++++++
+ .../compat/dsh-compat-shim/src/invariant.ts   |  22 +
+ packages/compat/dsh-compat-shim/tsconfig.json |   8 +
+ packages/plan/tool-plan-mode/README.i18n.yaml |   6 +
+ packages/plan/tool-plan-mode/README.md        |  58 +++
+ packages/plan/tool-plan-mode/README.zh.md     |  58 +++
+ packages/plan/tool-plan-mode/package.json     |  50 ++
+ packages/plan/tool-plan-mode/src/index.ts     |  91 ++++
+ packages/plan/tool-plan-mode/src/invariant.ts |  23 +
+ .../tests/tool-plan-mode.spec.ts              | 129 +++++
+ packages/plan/tool-plan-mode/tsconfig.json    |  30 ++
+ .../presets/autonomous/agent.cordis.yml       | 354 ++++++++++++++
+ .../presets/autonomous/preset.yml             |   3 +
+ .../schedule/automations/README.i18n.yaml     |   6 +
+ packages/schedule/automations/README.md       |  70 +++
+ packages/schedule/automations/README.zh.md    |  70 +++
+ packages/schedule/automations/package.json    |  64 +++
+ packages/schedule/automations/src/domain.ts   | 161 ++++++
+ packages/schedule/automations/src/index.ts    | 462 ++++++++++++++++++
+ .../schedule/automations/src/invariant.ts     |  23 +
+ packages/schedule/automations/src/spec.ts     |  47 ++
+ packages/schedule/automations/src/types.ts    |  59 +++
+ .../automations/tests/automations.spec.ts     | 387 +++++++++++++++
+ packages/schedule/automations/tsconfig.json   |  45 ++
+ 30 files changed, 2592 insertions(+)
+ create mode 100644 packages/compat/dsh-compat-shim/README.i18n.yaml
+ create mode 100644 packages/compat/dsh-compat-shim/README.md
+ create mode 100644 packages/compat/dsh-compat-shim/README.zh.md
+ create mode 100644 packages/compat/dsh-compat-shim/cordis.patch.yml
+ create mode 100644 packages/compat/dsh-compat-shim/package.json
+ create mode 100644 packages/compat/dsh-compat-shim/src/client.ts
+ create mode 100644 packages/compat/dsh-compat-shim/src/index.ts
+ create mode 100644 packages/compat/dsh-compat-shim/src/invariant.ts
+ create mode 100644 packages/compat/dsh-compat-shim/tsconfig.json
+ create mode 100644 packages/plan/tool-plan-mode/README.i18n.yaml
+ create mode 100644 packages/plan/tool-plan-mode/README.md
+ create mode 100644 packages/plan/tool-plan-mode/README.zh.md
+ create mode 100644 packages/plan/tool-plan-mode/package.json
+ create mode 100644 packages/plan/tool-plan-mode/src/index.ts
+ create mode 100644 packages/plan/tool-plan-mode/src/invariant.ts
+ create mode 100644 packages/plan/tool-plan-mode/tests/tool-plan-mode.spec.ts
+ create mode 100644 packages/plan/tool-plan-mode/tsconfig.json
+ create mode 100644 packages/preset/agent-presets/presets/autonomous/agent.cordis.yml
+ create mode 100644 packages/preset/agent-presets/presets/autonomous/preset.yml
+ create mode 100644 packages/schedule/automations/README.i18n.yaml
+ create mode 100644 packages/schedule/automations/README.md
+ create mode 100644 packages/schedule/automations/README.zh.md
+ create mode 100644 packages/schedule/automations/package.json
+ create mode 100644 packages/schedule/automations/src/domain.ts
+ create mode 100644 packages/schedule/automations/src/index.ts
+ create mode 100644 packages/schedule/automations/src/invariant.ts
+ create mode 100644 packages/schedule/automations/src/spec.ts
+ create mode 100644 packages/schedule/automations/src/types.ts
+ create mode 100644 packages/schedule/automations/tests/automations.spec.ts
+ create mode 100644 packages/schedule/automations/tsconfig.json
+
+diff --git a/packages/compat/dsh-compat-shim/README.i18n.yaml b/packages/compat/dsh-compat-shim/README.i18n.yaml
+new file mode 100644
+index 0000000000..b7bac0be7b
+--- /dev/null
++++ b/packages/compat/dsh-compat-shim/README.i18n.yaml
+@@ -0,0 +1,6 @@
++# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
++# side as of the last confirmed-consistent state. Both languages carry equal authority;
++# after editing either side, bring the other along and re-record with:
++#   pnpm run verify-translation-pairing --write packages/compat/dsh-compat-shim/README.md
++README.md: 0a4b54e781f1a5f17d34beb6b49496452eb17ee0
++README.zh.md: 34e660e2303fb2ec58f8b18ce75f4acf42670b50
+diff --git a/packages/compat/dsh-compat-shim/README.md b/packages/compat/dsh-compat-shim/README.md
+new file mode 100644
+index 0000000000..0a4b54e781
+--- /dev/null
++++ b/packages/compat/dsh-compat-shim/README.md
+@@ -0,0 +1,50 @@
++---
++description: "Backward-compatibility shim serving legacy service faces (apiProxy) and client module aliases to pre-gateway dsh plugins, for deployers of old plugins and maintainers retiring them."
++kind: "package-reference"
++---
++
++# @deepseek-ai/dsh-compat-shim
++
++English | [中文](README.zh.md)
++
++## Summary
++
++`dsh-compat-shim` keeps old dsh plugins running against the current harness: a host-side service re-exposes the removed `apiProxy` RPC face over the api-gateway Remote services, and the client half pairs with a `seed.ts` module alias so browser plugins that import the removed `@deepseek-ai/dsh-client-runtime/client` keep resolving. It is a deployment-local compatibility layer, not a product capability: mount it while old plugins need it, and retire it when the last consumer migrates.
++
++## Table of Contents
++
++- [Use this package](#use-this-package)
++- [Understand the implementation](#understand-the-implementation)
++- [Model Experience](#model-experience)
++- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
++
++-----
++
++<a id="use-this-package"></a>
++## Use this package
++
++Mount it as a bundle on the HOST plane: the `dsh.bundle.patch` inserts one row (`compat-shim`) that provides the `apiProxy` service, and the `dsh.client` declaration serves the browser half. Old plugins resolve `ctx.apiProxy` exactly as they did before the api-gateway migration; the shim forwards each call to the corresponding Remote service and wraps the result in the old `{ rpcId, result: { ok, value | error } }` envelope.
++
++### When to choose it
++
++Choose it when a deployment still runs plugins built against the removed `apiProxy` or `dsh-client-runtime` faces. Skip it once every consumer has migrated — each forwarding entry is a promise to keep answering an old shape, and the shim should shrink to zero.
++
++<a id="understand-the-implementation"></a>
++## Understand the implementation
++
++`createApiProxy` closes over the host context and forwards session, workspace, agent-preset, and host-describe calls to `ctx.remote.*`, translating business rejections into the legacy error envelope; `downloads.sessionLog` is a stub that throws. The client plugin is a marker: the actual browser alias (`dsh-client-runtime/client` → `dsh-client-store`) is installed by the web client's static module table (`seed.ts`), so the alias cannot drift between the two files.
++
++## Model Experience
++
++Indirectly, through the old plugins it keeps alive: the shim itself registers no prompt section, tool schema, or model context, and every model-facing effect belongs to the Remote services (or the browser plugins) it forwards to.
++
++#### KV Cache effect
++
++Independent of every request: the shim contributes no tokens to any model request and therefore cannot invalidate a reusable prefix.
++
++## Known Limitations and Deferred Work
++
++- **The bridge is untyped** — the legacy RPC request/response shapes are plain JS-in-TS; oxlint's unsafe-any rules are disabled for `packages/compat/**` under an explicit override, and each face should gain real types as its last consumer migrates off.
++- **`conversationEvents` is announced, not provided** — the package header names it, but `apply` only publishes `apiProxy`; old plugins depending on that face still break until it is added.
++- **`downloads.sessionLog` is a stub** — the legacy download call throws instead of streaming a session log; callers must treat it as unsupported.
++- **Outside the aggregate typecheck** — the package is not referenced from `tsconfig.host.json`, so `pnpm run build` never recompiles it; its `lib/` is built by hand and the profile install carries its own copy.
+diff --git a/packages/compat/dsh-compat-shim/README.zh.md b/packages/compat/dsh-compat-shim/README.zh.md
+new file mode 100644
+index 0000000000..34e660e230
+--- /dev/null
++++ b/packages/compat/dsh-compat-shim/README.zh.md
+@@ -0,0 +1,50 @@
++---
++description: "向后兼容 shim：为前网关时代的旧 dsh 插件提供遗留服务面（apiProxy）与客户端模块别名，供部署者与维护者阅读。"
++kind: "package-reference"
++---
++
++# @deepseek-ai/dsh-compat-shim
++
++[English](README.md) | 中文
++
++## Summary
++
++`dsh-compat-shim` 让旧 dsh 插件继续运行在当前 harness 之上：宿主侧服务在 api-gateway Remote 服务之上重新暴露已移除的 `apiProxy` RPC 面，客户端半部配合 `seed.ts` 的模块别名，让引用已移除的 `@deepseek-ai/dsh-client-runtime/client` 的浏览器插件照常解析。它是部署本地的兼容层，而非产品能力：还有旧插件依赖时就挂载，最后一个消费者迁移完成后就退役。
++
++## Table of Contents
++
++- [Use this package](#use-this-package)
++- [Understand the implementation](#understand-the-implementation)
++- [Model Experience](#model-experience)
++- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
++
++-----
++
++<a id="use-this-package"></a>
++## Use this package
++
++以 bundle 形态挂载在宿主面：`dsh.bundle.patch` 插入一行（`compat-shim`）提供 `apiProxy` 服务，`dsh.client` 声明提供浏览器半部。旧插件解析 `ctx.apiProxy` 的方式与 api-gateway 迁移之前完全一致；shim 把每次调用转发到对应的 Remote 服务，并把结果包装成旧的 `{ rpcId, result: { ok, value | error } }` 信封。
++
++### When to choose it
++
++当部署仍在运行基于已移除的 `apiProxy` 或 `dsh-client-runtime` 面构建的插件时选择它。所有消费者迁移完成后就不要再挂——每条转发项都是"继续应答旧形态"的承诺，shim 应当收缩到零。
++
++<a id="understand-the-implementation"></a>
++## Understand the implementation
++
++`createApiProxy` 闭包持有宿主上下文，把 session、workspace、agent-preset 与 host-describe 调用转发到 `ctx.remote.*`，把业务拒绝翻译成旧版错误信封；`downloads.sessionLog` 是直接抛错的桩。客户端插件只是一个标记：真正的浏览器别名（`dsh-client-runtime/client` → `dsh-client-store`）由 Web 客户端的静态模块表（`seed.ts`）安装，因此别名不会在两个文件之间漂移。
++
++## Model Experience
++
++Indirectly, through 它所维持的旧插件：shim 自身不注册任何提示词小节、工具 schema 或模型上下文，所有模型侧效果都归属于它所转发的 Remote 服务（或浏览器插件）。
++
++#### KV Cache effect
++
++与任何请求无关：shim 不向任何模型请求贡献 token，因此不可能使可复用前缀失效。
++
++## Known Limitations and Deferred Work
++
++- **桥是无类型的**——遗留 RPC 请求/响应形态是 JS-in-TS；oxlint 的 unsafe-any 规则通过显式覆盖对 `packages/compat/**` 关闭，每个面应在其最后一位消费者迁移时补上真实类型。
++- **`conversationEvents` 有宣告、无实现**——包头部提到了它，但 `apply` 只发布 `apiProxy`；依赖该面的旧插件在它补上之前仍然会坏。
++- **`downloads.sessionLog` 是桩**——遗留下载调用直接抛错而不是流式输出会话日志；调用方必须视其为不支持。
++- **不在聚合类型检查之内**——本包未被 `tsconfig.host.json` 引用，`pnpm run build` 不会重编译它；`lib/` 由手工构建，profile 安装自带副本。
+diff --git a/packages/compat/dsh-compat-shim/cordis.patch.yml b/packages/compat/dsh-compat-shim/cordis.patch.yml
+new file mode 100644
+index 0000000000..eb0aa50e23
+--- /dev/null
++++ b/packages/compat/dsh-compat-shim/cordis.patch.yml
+@@ -0,0 +1,5 @@
++# DSH Compatibility Shim bundle patch
++# Registers the compat shim plugin into the profile
++- insert:
++    - id: compat-shim
++      name: '@deepseek-ai/dsh-compat-shim'
+diff --git a/packages/compat/dsh-compat-shim/package.json b/packages/compat/dsh-compat-shim/package.json
+new file mode 100644
+index 0000000000..7e99cc2288
+--- /dev/null
++++ b/packages/compat/dsh-compat-shim/package.json
+@@ -0,0 +1,61 @@
++{
++  "name": "@deepseek-ai/dsh-compat-shim",
++  "description": "Backward-compatibility shim for old dsh plugins (apiProxy, dsh-client-runtime, etc.)",
++  "version": "0.1.2-alpha.1",
++  "private": true,
++  "publishConfig": {
++    "access": "public"
++  },
++  "repository": {
++    "type": "git",
++    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
++    "directory": "packages/compat/dsh-compat-shim"
++  },
++  "type": "module",
++  "main": "lib/index.js",
++  "types": "lib/types/index.d.ts",
++  "exports": {
++    ".": {
++      "types": "./lib/types/index.d.ts",
++      "default": "./lib/index.js"
++    },
++    "./client": {
++      "types": "./lib/types/client.d.ts",
++      "default": "./lib/client.js"
++    },
++    "./invariant": {
++      "types": "./lib/types/invariant.d.ts",
++      "default": "./lib/invariant.js"
++    },
++    "./src/*": "./src/*",
++    "./package.json": "./package.json"
++  },
++  "files": [
++    "lib/index.js",
++    "lib/invariant.js",
++    "lib/client.js",
++    "cordis.patch.yml",
++    "lib/types/**/*.d.ts"
++  ],
++  "license": "MIT",
++  "dependencies": {
++    "@deepseek-ai/cordis": "workspace:^"
++  },
++  "peerDependencies": {
++    "@deepseek-ai/cordis": "workspace:^"
++  },
++  "devDependencies": {
++    "@deepseek-ai/cordis": "workspace:^"
++  },
++  "dsh": {
++    "bundle": {
++      "patch": "./cordis.patch.yml"
++    },
++    "client": {
++      "inject": [
++        "@deepseek-ai/dsh-client-ui-conversation"
++      ],
++      "platform": "web"
++    }
++  }
++}
+diff --git a/packages/compat/dsh-compat-shim/src/client.ts b/packages/compat/dsh-compat-shim/src/client.ts
+new file mode 100644
+index 0000000000..062edb0a4e
+--- /dev/null
++++ b/packages/compat/dsh-compat-shim/src/client.ts
+@@ -0,0 +1,19 @@
++/**
++ * DSH Compatibility Shim - Client Plugin
++ *
++ * Adds backward-compatible module aliases to the browser module table:
++ * - `@deepseek-ai/dsh-client-runtime/client` → `@deepseek-ai/dsh-client-store`
++ *
++ * This allows old plugins that reference the removed dsh-client-runtime package
++ * to work with the current version.
++ */
++
++export const name = 'dsh-compat-shim-client'
++
++export const inject = ['modules']
++
++export function apply(_ctx) {
++  // The module alias is handled at boot time in seed.ts
++  // This client plugin just ensures the compat shim is loaded
++  console.log('[dsh-compat-shim-client] client compatibility layer loaded')
++}
+diff --git a/packages/compat/dsh-compat-shim/src/index.ts b/packages/compat/dsh-compat-shim/src/index.ts
+new file mode 100644
+index 0000000000..82cc1e3542
+--- /dev/null
++++ b/packages/compat/dsh-compat-shim/src/index.ts
+@@ -0,0 +1,175 @@
++/**
++ * DSH Compatibility Shim Plugin
++ *
++ * Provides backward-compatible services for old plugins that reference
++ * removed or renamed services:
++ *
++ * - `apiProxy`: Old RPC-style API proxy (replaced by api-gateway Remote services)
++ * - `conversationEvents`: Old conversation events service (now uiConversation.events)
++ *
++ * Host-side plugin: runs in Node.js, provides services to other plugins.
++ */
++
++export const name = 'dsh-compat-shim'
++
++/** Wrap a result in the old RPC response format */
++function ok(request, value) {
++  return { rpcId: request.rpcId, result: { ok: true, value } }
++}
++
++/** Wrap an error in the old RPC response format */
++function makeError(request, code, message) {
++  return { rpcId: request.rpcId, result: { ok: false, error: { code, message } } }
++}
++
++/**
++ * Create an apiProxy-compatible interface using the new Remote services.
++ * This bridges old plugins to the new api-gateway architecture.
++ */
++function createApiProxy(ctx) {
++  return {
++    sessions: {
++      async list(request) {
++        try {
++          const result = await ctx.remote.session.list({})
++          if (result.ok) {
++            return ok(request, { items: result.value.items })
++          }
++          return makeError(request, result.error?.code ?? 'UNKNOWN', result.error?.message ?? 'list failed')
++        } catch (e) {
++          return makeError(request, 'INTERNAL', e.message)
++        }
++      },
++
++      async create(request) {
++        try {
++          const payload = {}
++          if (request.payload.workspaceId) payload.workspaceId = request.payload.workspaceId
++          if (request.payload.agentPreset) payload.agentPreset = request.payload.agentPreset
++          const result = await ctx.remote.session.create(payload)
++          if (result.ok) {
++            return ok(request, { sessionId: result.value.sessionId })
++          }
++          return makeError(request, result.error?.code ?? 'UNKNOWN', result.error?.message ?? 'create failed')
++        } catch (e) {
++          return makeError(request, 'INTERNAL', e.message)
++        }
++      },
++
++      async rename(request) {
++        try {
++          const result = await ctx.remote.session.rename({
++            sessionId: request.payload.sessionId,
++            title: request.payload.title,
++          })
++          if (result.ok) {
++            return ok(request, { sessionId: request.payload.sessionId })
++          }
++          return makeError(request, result.error?.code ?? 'UNKNOWN', result.error?.message ?? 'rename failed')
++        } catch (e) {
++          return makeError(request, 'INTERNAL', e.message)
++        }
++      },
++
++      async prompt(request) {
++        try {
++          const result = await ctx.remote.session.prompt({
++            sessionId: request.payload.sessionId,
++            mode: request.payload.mode,
++            content: request.payload.content,
++          })
++          if (result.ok) {
++            return ok(request, undefined)
++          }
++          return makeError(request, result.error?.code ?? 'UNKNOWN', result.error?.message ?? 'prompt failed')
++        } catch (e) {
++          return makeError(request, 'INTERNAL', e.message)
++        }
++      },
++
++      async history(request) {
++        try {
++          const result = await ctx.remote.session.history({
++            sessionId: request.payload.sessionId,
++            fromSeq: request.payload.fromSeq,
++            limit: request.payload.limit,
++          })
++          if (result.ok) {
++            return ok(request, { entries: result.value.entries ?? [] })
++          }
++          return makeError(request, result.error?.code ?? 'UNKNOWN', result.error?.message ?? 'history failed')
++        } catch (e) {
++          return makeError(request, 'INTERNAL', e.message)
++        }
++      },
++    },
++
++    workspace: {
++      async list(request) {
++        try {
++          const result = await ctx.remote.workspace.list({})
++          if (result.ok) {
++            return ok(request, { items: result.value.items })
++          }
++          return makeError(request, result.error?.code ?? 'UNKNOWN', result.error?.message ?? 'list failed')
++        } catch (e) {
++          return makeError(request, 'INTERNAL', e.message)
++        }
++      },
++    },
++
++    agentPresets: {
++      async list(request) {
++        try {
++          const result = await ctx.remote.agentPresets.list({})
++          if (result.ok) {
++            return ok(request, { presets: result.value.presets })
++          }
++          return makeError(request, result.error?.code ?? 'UNKNOWN', result.error?.message ?? 'list failed')
++        } catch (e) {
++          return makeError(request, 'INTERNAL', e.message)
++        }
++      },
++    },
++
++    host: {
++      async describe(request) {
++        try {
++          const selection = ctx.get('agentDefaultModel')?.selection ?? { provider: 'unknown', model: 'unknown' }
++          return ok(request, {
++            version: '0.1.2-alpha.1',
++            cwd: process.cwd(),
++            provider: selection.provider,
++            model: selection.model,
++            attachedSessions: ctx.agents?.list().length ?? 0,
++            home: process.env.HOME ?? '~',
++            canOpenPath: false,
++          })
++        } catch (e) {
++          return makeError(request, 'INTERNAL', e.message)
++        }
++      },
++    },
++
++    downloads: {
++      sessionLog(_sessionId, _compressionLevel) {
++        // Stub: session log download not implemented in compat shim
++        throw new Error('sessionLog download not supported in compat shim')
++      },
++    },
++  }
++}
++
++export function apply(ctx) {
++  // Provide the apiProxy service for old plugins
++  ctx.effect(() => {
++    // @ts-ignore - providing legacy service
++    ctx.apiProxy = createApiProxy(ctx)
++    console.log('[dsh-compat-shim] apiProxy service registered')
++
++    return () => {
++      // @ts-ignore
++      ctx.apiProxy = undefined
++    }
++  }, 'dsh-compat-shim: apiProxy service')
++}
+diff --git a/packages/compat/dsh-compat-shim/src/invariant.ts b/packages/compat/dsh-compat-shim/src/invariant.ts
+new file mode 100644
+index 0000000000..2e71ca56ac
+--- /dev/null
++++ b/packages/compat/dsh-compat-shim/src/invariant.ts
+@@ -0,0 +1,22 @@
++/** Package-owned invariant companion for `@deepseek-ai/dsh-compat-shim`. */
++
++import type { Context } from '@deepseek-ai/cordis'
++import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
++
++const PACKAGE_NAME = '@deepseek-ai/dsh-compat-shim'
++
++/** Cordis companion plugin name. */
++export const name = 'dsh-compat-shim-invariant'
++/** Invariant registry dependency. */
++export const inject = ['invariants']
++
++/**
++ * No runtime invariant: the shim publishes legacy service FACES (apiProxy)
++ * for old plugins and asserts nothing about durable state; the Remote
++ * services it forwards to own their own relationships.
++ */
++const install: InvariantInstaller = () => {}
++
++/** Register this package's invariant ownership. */
++export const apply = (ctx: Context): Promise<() => void> =>
++  Promise.resolve(ctx.invariants.register(PACKAGE_NAME, install))
+diff --git a/packages/compat/dsh-compat-shim/tsconfig.json b/packages/compat/dsh-compat-shim/tsconfig.json
+new file mode 100644
+index 0000000000..66c75c7a86
+--- /dev/null
++++ b/packages/compat/dsh-compat-shim/tsconfig.json
+@@ -0,0 +1,8 @@
++{
++  "extends": "../../../tsconfig.base.json",
++  "compilerOptions": {
++    "rootDir": "src",
++    "outDir": "lib/types"
++  },
++  "include": ["src"]
++}
+diff --git a/packages/plan/tool-plan-mode/README.i18n.yaml b/packages/plan/tool-plan-mode/README.i18n.yaml
+new file mode 100644
+index 0000000000..b52466243c
+--- /dev/null
++++ b/packages/plan/tool-plan-mode/README.i18n.yaml
+@@ -0,0 +1,6 @@
++# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
++# side as of the last confirmed-consistent state. Both languages carry equal authority;
++# after editing either side, bring the other along and re-record with:
++#   pnpm run verify-translation-pairing --write packages/plan/tool-plan-mode/README.md
++README.md: e446ae7023f658ca6fa11fc1e414c4b1b11d8e4e
++README.zh.md: 0795aa4424e0ce28b3c681ff431d7800a275755c
+diff --git a/packages/plan/tool-plan-mode/README.md b/packages/plan/tool-plan-mode/README.md
+new file mode 100644
+index 0000000000..e446ae7023
+--- /dev/null
++++ b/packages/plan/tool-plan-mode/README.md
+@@ -0,0 +1,58 @@
++---
++description: "The model-facing enter_plan_mode tool: the agent proposes switching its session into plan mode, while plan state and the exit review stay owned by dsh-plan-mode."
++kind: "package-reference"
++---
++
++# @deepseek-ai/dsh-tool-plan-mode
++
++English | [中文](README.zh.md)
++
++## Summary
++
++`dsh-tool-plan-mode` gives the agent one tool, `enter_plan_mode`, to propose switching its session into plan mode before starting non-trivial implementation work. It completes the plan-mode loop for autonomous agents: without it, only the user can turn plan mode on, so an agent that decides mid-task that the user should approve the approach first has no way to say so. Plan state, the plan-policy prompt section, the `/plan` command, and the reviewed `exit_plan_mode` transition stay owned by `@deepseek-ai/dsh-plan-mode`; this package only forwards the model's intent to that controller and reports the outcome.
++
++## Table of Contents
++
++- [Use this package](#use-this-package)
++- [Understand the implementation](#understand-the-implementation)
++- [Model Experience](#model-experience)
++- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
++
++-----
++
++<a id="use-this-package"></a>
++## Use this package
++
++Mount it beside `@deepseek-ai/dsh-plan-mode` in the same scope — an agent preset's planning group, or a host composition that runs the controller globally. The plugin declares `['tools', 'planMode']` as its injects; a composition without the controller fails at inject resolution rather than degrading silently. The tool takes no configuration.
++
++### When to choose it
++
++Choose it when the agent should decide for itself when a task needs an approved plan — autonomous or long-horizon presets, where no user is watching to flip the mode. Skip it where the workflow already fixes who plans: short automation runs, or deployments that treat plan mode as a purely user-driven switch.
++
++<a id="understand-the-implementation"></a>
++## Understand the implementation
++
++`apply` reads the `planMode` controller once and registers one tool. The execute path rejects calls while plan mode is already active, then calls `ctx.planMode.set(agent, true)` and maps the outcome: a tool call always runs inside an open turn, so the normal result is a queued selection that lands at the next accepted pre-step; `noop` with an inactive log means an identical selection is already queued, and `cancelled` clears an opposite pending selection because the log already reads active. Leaving plan mode is untouched: `exit_plan_mode` keeps its user review, so entry is the only model-initiated transition and it only ever restricts the agent.
++
++The mode-change narration the controller injects at the step boundary is source-neutral ("Plan mode is now active"), because the user (a `/plan` selection) and the agent (this tool) both land there.
++
++## Model Experience
++
++### Request context and condition
++
++#### What the model sees
++
++The generated [`enter_plan_mode` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-plan-mode): a parameterless tool whose description states when to propose plan mode and that `/plan off` cancels or leaves it. The result is a fixed two-field object (`entered`, `queued`) rendered as one sentence that names the next step — ground the plan in inspection, then present it with `exit_plan_mode`. A call while plan mode is already active fails with an error naming `exit_plan_mode` instead.
++
++#### Token effect
++
++Fixed, small: one tool schema plus the one-sentence result per call. The controller's plan-policy section appears only while plan mode is active and is owned by `@deepseek-ai/dsh-plan-mode`.
++
++#### KV Cache effect
++
++The tool schema is a stable prefix member of every request for sessions on a composition that mounts it, including sessions that never call it. Results append; nothing replaces earlier request tokens. A queued selection does not alter the tool catalog — the exit tool stays registered in both modes for the same reason.
++
++## Known Limitations and Deferred Work
++
++- **No consent round-trip on entry** — a model-initiated switch commits (or queues) without asking the user first, mirroring `/plan`; the restrictiveness of plan mode is the safety property, and leaving still requires the user's review. A consent-gated variant would need an approval-policy surface this package does not own.
++- **In-turn entry waits for the step boundary** — like every plan selection made inside an open turn, the switch applies at the next accepted pre-step; the tool result says so in model-visible text rather than hiding the delay.
+diff --git a/packages/plan/tool-plan-mode/README.zh.md b/packages/plan/tool-plan-mode/README.zh.md
+new file mode 100644
+index 0000000000..0795aa4424
+--- /dev/null
++++ b/packages/plan/tool-plan-mode/README.zh.md
+@@ -0,0 +1,58 @@
++---
++description: "模型侧的 enter_plan_mode 工具：Agent 主动提议把会话切入计划模式；计划状态与退出评审仍由 dsh-plan-mode 持有。"
++kind: "package-reference"
++---
++
++# @deepseek-ai/dsh-tool-plan-mode
++
++[English](README.md) | 中文
++
++## Summary
++
++`dsh-tool-plan-mode` 给 Agent 一个工具：`enter_plan_mode`，用于在开始非平凡的实现工作之前，提议把当前会话切入计划模式。它补全了自主 Agent 的计划模式闭环：没有它，只有用户能开启计划模式，Agent 在任务中途判断"该让用户先确认方案"时无处表达。计划状态、plan-policy 提示词小节、`/plan` 命令、以及带用户评审的 `exit_plan_mode` 退出转换，仍全部由 `@deepseek-ai/dsh-plan-mode` 持有；本包只把模型的意图转发给该控制器并报告结果。
++
++## Table of Contents
++
++- [Use this package](#use-this-package)
++- [Understand the implementation](#understand-the-implementation)
++- [Model Experience](#model-experience)
++- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
++
++-----
++
++<a id="use-this-package"></a>
++## Use this package
++
++把它挂载在 `@deepseek-ai/dsh-plan-mode` 同一作用域旁边——agent preset 的 planning 组，或全局运行该控制器的宿主组装。插件声明的 injects 是 `['tools', 'planMode']`；没有控制器的组装会在 inject 解析时报错，而不是静默降级。本工具没有配置项。
++
++### When to choose it
++
++当 Agent 应当自行判断某个任务需要先拿到批准的计划时选择它——自主型或长程任务预设，那里没有用户实时盯着模式开关。如果工作流已经固定了谁做计划（短自动化任务，或把计划模式当作纯用户开关的部署），则不必挂载。
++
++<a id="understand-the-implementation"></a>
++## Understand the implementation
++
++`apply` 读取一次 `planMode` 控制器并注册一个工具。execute 路径在计划模式已激活时拒绝调用，否则调用 `ctx.planMode.set(agent, true)` 并映射结果：工具调用必然发生在打开的轮次之内，所以正常结果是排队中的选择，在下一个被接受的 pre-step 落地；日志未激活时的 `noop` 表示同样的进入选择已在排队；`cancelled` 清掉一个方向相反的待生效选择，因为日志已经读作激活。退出路径不做任何改动：`exit_plan_mode` 保留其用户评审，所以进入是唯一的模型发起转换，并且只会收紧 Agent 的行动。
++
++控制器在轮次边界注入的模式切换叙事是来源中性的（"Plan mode is now active"），因为用户（`/plan` 选择）和 Agent（本工具）都会走到这里。
++
++## Model Experience
++
++### Request context and condition
++
++#### What the model sees
++
++生成的 [`enter_plan_mode` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-plan-mode)：一个无参数工具，其 description 说明何时提议计划模式，以及 `/plan off` 可以取消或退出。结果是固定的两字段对象（`entered`、`queued`），渲染成一句话，指明下一步——先以检查落实计划，再用 `exit_plan_mode` 提交。计划模式已激活时调用会失败，错误信息指向 `exit_plan_mode`。
++
++#### Token effect
++
++固定且很小：一个工具 schema 加每次调用一句结果。plan-policy 小节只在计划模式激活时出现，归 `@deepseek-ai/dsh-plan-mode` 所有。
++
++#### KV Cache effect
++
++工具 schema 是挂载了本包的会话每个请求的稳定前缀成员，包括从未调用它的会话。结果只追加；不替换任何早期请求 token。排队中的选择不改变工具目录——退出工具在两种模式下都保持注册，理由相同。
++
++## Known Limitations and Deferred Work
++
++- **进入没有同意往返**——模型发起的切换会直接提交（或排队），不经用户先确认，与 `/plan` 一致；计划模式本身的限制性就是安全属性，退出仍需用户评审。带同意门控的变体需要本包不持有的审批策略面。
++- **轮内进入要等步边界**——与所有在打开轮次内做出的计划选择一样，切换在下一个被接受的 pre-step 生效；工具结果用模型可见的文字说明了这一点，而不是掩盖延迟。
+diff --git a/packages/plan/tool-plan-mode/package.json b/packages/plan/tool-plan-mode/package.json
+new file mode 100644
+index 0000000000..87d4d28aad
+--- /dev/null
++++ b/packages/plan/tool-plan-mode/package.json
+@@ -0,0 +1,50 @@
++{
++  "name": "@deepseek-ai/dsh-tool-plan-mode",
++  "description": "Model-facing enter_plan_mode tool: the agent proposes switching the session into plan mode",
++  "version": "0.1.2-alpha.1",
++  "publishConfig": {
++    "access": "public"
++  },
++  "repository": {
++    "type": "git",
++    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
++    "directory": "packages/plan/tool-plan-mode"
++  },
++  "type": "module",
++  "main": "lib/index.js",
++  "types": "lib/types/index.d.ts",
++  "exports": {
++    ".": {
++      "types": "./lib/types/index.d.ts",
++      "default": "./lib/index.js"
++    },
++    "./invariant": {
++      "types": "./lib/types/invariant.d.ts",
++      "default": "./lib/invariant.js"
++    },
++    "./src/*": "./src/*",
++    "./package.json": "./package.json"
++  },
++  "files": [
++    "lib/index.js",
++    "lib/invariant.js",
++    "lib/types/**/*.d.ts"
++  ],
++  "license": "MIT",
++  "peerDependencies": {
++    "@deepseek-ai/dsh-agent": "workspace:^",
++    "@deepseek-ai/dsh-plan-mode": "workspace:^",
++    "@deepseek-ai/dsh-session": "workspace:^",
++    "@deepseek-ai/dsh-tools": "workspace:^",
++    "@deepseek-ai/cordis": "workspace:^"
++  },
++  "devDependencies": {
++    "@deepseek-ai/cordis": "workspace:^",
++    "@deepseek-ai/dsh-agent": "workspace:^",
++    "@deepseek-ai/dsh-llm": "workspace:^",
++    "@deepseek-ai/dsh-plan-mode": "workspace:^",
++    "@deepseek-ai/dsh-session": "workspace:^",
++    "@deepseek-ai/dsh-system-prompt": "workspace:^",
++    "@deepseek-ai/dsh-tools": "workspace:^"
++  }
++}
+diff --git a/packages/plan/tool-plan-mode/src/index.ts b/packages/plan/tool-plan-mode/src/index.ts
+new file mode 100644
+index 0000000000..fe9d4a2045
+--- /dev/null
++++ b/packages/plan/tool-plan-mode/src/index.ts
+@@ -0,0 +1,91 @@
++/**
++ * The model-facing plan-mode entry tool: the model can propose switching the
++ * session into plan mode for the task it is about to start.
++ *
++ * Plan state stays owned by `@deepseek-ai/dsh-plan-mode`: this plugin only
++ * forwards the model's intent to `ctx.planMode.set(agent, true)` and reports
++ * the outcome. A selection made from a tool call is always in-turn, so it
++ * applies at the next accepted pre-step; the same `/plan off` command that
++ * serves a user switch cancels a pending selection. Leaving plan mode stays
++ * gated by `exit_plan_mode`'s user review, so entry is the only
++ * model-initiated transition, and it only ever restricts the agent.
++ *
++ * @module @deepseek-ai/dsh-tool-plan-mode
++ */
++
++import type { Context } from '@deepseek-ai/cordis'
++import { defineTool } from '@deepseek-ai/dsh-tools'
++// Type-only edge: declaration-merges `ctx.planMode` onto Context; the runtime
++// resolution goes through the `inject` list below.
++import type {} from '@deepseek-ai/dsh-plan-mode'
++
++/** Cordis plugin name. */
++export const name = 'tool-plan-mode'
++
++/** Services this plugin requires: the tool registry and the plan-mode controller. */
++export const inject = ['tools', 'planMode']
++
++/** The model-facing entry tool's name. */
++export const ENTER_PLAN_MODE = 'enter_plan_mode'
++
++const ENTER_DESCRIPTION
++  = 'Propose switching this session into plan mode. Use it before starting '
++  + 'non-trivial implementation work when the user should approve the approach '
++  + 'first. In plan mode you research and plan; implementation waits until your '
++  + 'exit_plan_mode call is approved. The switch applies from your next step; '
++  + 'the user can cancel it or leave plan mode at any time with /plan off.'
++
++/**
++ * Register the entry tool for the mounting context's scope.
++ * @param ctx - a context carrying `tools` and the `planMode` controller
++ *   (`@deepseek-ai/dsh-plan-mode` mounted in the same scope; the inject
++ *   resolution fails loud when it is absent).
++ */
++export function apply(ctx: Context): void {
++  const planMode = ctx.planMode
++  ctx.tools.register(defineTool({
++    name: ENTER_PLAN_MODE,
++    description: ENTER_DESCRIPTION,
++    parameters: {},
++    output: {
++      schema: {
++        type: 'object',
++        additionalProperties: false,
++        properties: {
++          entered: { type: 'boolean', required: true, const: true },
++          queued: { type: 'boolean', required: true },
++        },
++      },
++      render: (_args, value) => [{
++        type: 'text',
++        text: value.queued
++          ? 'Entering plan mode from your next step. Ground the plan in inspection first, then present it with exit_plan_mode.'
++          : 'Plan mode on. Ground the plan in inspection first, then present it with exit_plan_mode.',
++      }],
++    },
++    execute(_args, exec) {
++      const agent = exec.agent
++      if (agent === undefined) {
++        throw new Error(`${ENTER_PLAN_MODE} requires a calling agent (no session to switch)`)
++      }
++      if (planMode.get(agent).active) {
++        throw new Error(
++          `${ENTER_PLAN_MODE} is only available outside plan mode; `
++          + 'present your plan with exit_plan_mode instead',
++        )
++      }
++      const outcome = planMode.set(agent, true)
++      // `queued` is the normal in-turn path: the selection lands at the next
++      // accepted pre-step. `noop` with an inactive log means an identical
++      // entry selection is already queued. `cancelled` clears an opposite
++      // pending selection — the log already reads active, so nothing waits.
++      return Promise.resolve({ entered: true as const, queued: outcome === 'queued' || outcome === 'noop' })
++    },
++    presentCall: () => ({
++      card: 'generic',
++      title: 'Plan mode',
++      kind: 'other',
++      content: [{ type: 'text', text: 'The agent proposes switching this session into plan mode.' }],
++    }),
++  }))
++}
+diff --git a/packages/plan/tool-plan-mode/src/invariant.ts b/packages/plan/tool-plan-mode/src/invariant.ts
+new file mode 100644
+index 0000000000..cbfffeda04
+--- /dev/null
++++ b/packages/plan/tool-plan-mode/src/invariant.ts
+@@ -0,0 +1,23 @@
++/** Package-owned invariant companion for the plan-mode entry tool. */
++
++import type { Context } from '@deepseek-ai/cordis'
++import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
++
++const PACKAGE_NAME = '@deepseek-ai/dsh-tool-plan-mode'
++
++/** Cordis companion plugin name. */
++export const name = 'tool-plan-mode-invariant'
++/** Invariant registry dependency. */
++export const inject = ['invariants']
++
++/**
++ * No runtime invariant: the tool owns no durable relationship. Plan state and
++ * its `plan/mode` event vocabulary belong to `@deepseek-ai/dsh-plan-mode`,
++ * whose companion validates them; this package only forwards the model's
++ * intent to that controller.
++ */
++const install: InvariantInstaller = () => {}
++
++/** Register this package's invariant ownership. */
++export const apply = (ctx: Context): Promise<() => void> =>
++  Promise.resolve(ctx.invariants.register(PACKAGE_NAME, install))
+diff --git a/packages/plan/tool-plan-mode/tests/tool-plan-mode.spec.ts b/packages/plan/tool-plan-mode/tests/tool-plan-mode.spec.ts
+new file mode 100644
+index 0000000000..456518efdc
+--- /dev/null
++++ b/packages/plan/tool-plan-mode/tests/tool-plan-mode.spec.ts
+@@ -0,0 +1,129 @@
++import { describe, expect, it } from 'vitest'
++import { Context } from '@deepseek-ai/cordis'
++import type { Agent } from '@deepseek-ai/dsh-agent'
++import { Session, SessionId, type UserMessage } from '@deepseek-ai/dsh-session'
++import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
++import ToolRuntime from '@deepseek-ai/dsh-tools'
++import { ToolCallId } from '@deepseek-ai/dsh-llm'
++import PlanModeController, { foldPlanMode } from '@deepseek-ai/dsh-plan-mode'
++import * as ToolPlanMode from '../src/index.ts'
++
++const { ENTER_PLAN_MODE } = ToolPlanMode
++
++/**
++ * Drives the REAL entry tool against the REAL plan-mode controller: mounts
++ * `dsh-tool-plan-mode` beside `dsh-plan-mode`, real `ToolRuntime` and
++ * `SystemPrompt`, with fake Agents carrying real `Session`s — the same shape
++ * the plan-mode suite uses. Executions go through the registry's own execute
++ * path, so outcomes, rendered text, and the session log are the plugin's
++ * actual contract.
++ */
++
++async function setup(): Promise<Context> {
++  const ctx = new Context()
++  await ctx.plugin(SystemPrompt)
++  await ctx.plugin(ToolRuntime)
++  await ctx.plugin(PlanModeController, { section: 'Test plan mode instructions.' })
++  await ctx.plugin(ToolPlanMode)
++  return ctx
++}
++
++async function agentWithSession(ctx: Context, id = 'agent-1'): Promise<Agent> {
++  const session = Session.create(SessionId(id))
++  const agent = {
++    id: SessionId(id),
++    session,
++    inject(message: UserMessage) {
++      session.append('user/message', message, { surfaceOp: 'append' })
++    },
++  } as unknown as Agent
++  ctx.emit('agent/created', { agent })
++  return agent
++}
++
++/** Pre-generated call ids: one test needs at most six unique tool calls. */
++const CALL_IDS = [
++  ToolCallId('call-1'), ToolCallId('call-2'), ToolCallId('call-3'),
++  ToolCallId('call-4'), ToolCallId('call-5'), ToolCallId('call-6'),
++]
++let callCounter = 0
++
++/** One registry request for the entry tool, with the next pre-generated id. */
++function enterRequest(agent?: Agent) {
++  const callId = CALL_IDS[callCounter] ?? CALL_IDS[CALL_IDS.length - 1]!
++  callCounter += 1
++  return {
++    callId,
++    name: ENTER_PLAN_MODE,
++    arguments: {},
++    signal: new AbortController().signal,
++    ...agent ? { agent } : {},
++  }
++}
++
++function resultText(result: { content: readonly { type: string; text?: string }[] }): string {
++  return result.content.map(block => block.text ?? '').join('\n')
++}
++
++describe('enter_plan_mode', () => {
++  it('registers beside exit_plan_mode with an empty parameter schema', async () => {
++    const ctx = await setup()
++    const names = ctx.tools.schemas().map(tool => tool.name)
++    expect(names).toContain(ENTER_PLAN_MODE)
++    const definition = ctx.tools.get(ENTER_PLAN_MODE)!
++    expect(definition.parameters).toEqual({ type: 'object', properties: {} })
++  })
++
++  it('commits the switch between turns and reports it as immediate', async () => {
++    const ctx = await setup()
++    const agent = await agentWithSession(ctx)
++
++    const result = await ctx.tools.execute(enterRequest(agent))
++    expect(result.isError).toBe(false)
++    expect(resultText(result)).toContain('Plan mode on')
++    expect(foldPlanMode(agent.session.events)).toBe(true)
++  })
++
++  it('queues the switch inside an open turn until the next pre-step', async () => {
++    const ctx = await setup()
++    const agent = await agentWithSession(ctx)
++    agent.session.append('turn/start', { turn: 0 })
++
++    const result = await ctx.tools.execute(enterRequest(agent))
++    expect(result.isError).toBe(false)
++    expect(resultText(result)).toContain('Entering plan mode from your next step')
++    expect(foldPlanMode(agent.session.events)).toBe(false)
++    expect(agent.session.events.some(event => event.type === 'plan/mode')).toBe(false)
++  })
++
++  it('rejects while plan mode is already active', async () => {
++    const ctx = await setup()
++    const agent = await agentWithSession(ctx)
++    agent.session.append('plan/mode', { active: true })
++
++    const result = await ctx.tools.execute(enterRequest(agent))
++    expect(result.isError).toBe(true)
++    expect(resultText(result)).toContain('only available outside plan mode')
++  })
++
++  it('stays idempotent while an entry selection is already queued', async () => {
++    const ctx = await setup()
++    const agent = await agentWithSession(ctx)
++    agent.session.append('turn/start', { turn: 0 })
++
++    const first = await ctx.tools.execute(enterRequest(agent))
++    const second = await ctx.tools.execute(enterRequest(agent))
++    expect(first.isError).toBe(false)
++    expect(second.isError).toBe(false)
++    expect(resultText(second)).toContain('Entering plan mode from your next step')
++    expect(agent.session.events.filter(event => event.type === 'turn/start')).toHaveLength(1)
++  })
++
++  it('requires a calling agent', async () => {
++    const ctx = await setup()
++
++    const result = await ctx.tools.execute(enterRequest())
++    expect(result.isError).toBe(true)
++    expect(resultText(result)).toContain('requires a calling agent')
++  })
++})
+diff --git a/packages/plan/tool-plan-mode/tsconfig.json b/packages/plan/tool-plan-mode/tsconfig.json
+new file mode 100644
+index 0000000000..e9fb15c344
+--- /dev/null
++++ b/packages/plan/tool-plan-mode/tsconfig.json
+@@ -0,0 +1,30 @@
++{
++  "extends": "../../../tsconfig.base.json",
++  "compilerOptions": {
++    "rootDir": "src",
++    "outDir": "lib/types"
++  },
++  "include": [
++    "src"
++  ],
++  "references": [
++    {
++      "path": "../../../vendor/cosmokit"
++    },
++    {
++      "path": "../../../vendor/cordis"
++    },
++    {
++      "path": "../../core/tools"
++    },
++    {
++      "path": "../../core/agent"
++    },
++    {
++      "path": "../../core/session"
++    },
++    {
++      "path": "../plan-mode"
++    }
++  ]
++}
+diff --git a/packages/preset/agent-presets/presets/autonomous/agent.cordis.yml b/packages/preset/agent-presets/presets/autonomous/agent.cordis.yml
+new file mode 100644
+index 0000000000..7ad619efe5
+--- /dev/null
++++ b/packages/preset/agent-presets/presets/autonomous/agent.cordis.yml
+@@ -0,0 +1,354 @@
++# The `autonomous` agent preset: the standard coding agent tuned for unattended
++# operation, modeled on ZCode's Agent mode.
++#
++# The toolset matches `standard` — shell, filesystem, search, background jobs,
++# skills, goals, plan mode, compaction, delegation, web — because the tuning of
++# this preset is DOCTRINAL, not mechanical: the persona below carries the
++# operating rules of an agent left to work on its own (act on reversible steps,
++# keep a todo list current, delegate breadth, verify before claiming done).
++# The rows that differ from `standard` back that doctrine up:
++#
++#   * `tool-todo` forbids parallel in-progress items — the list is a plan with
++#     one front, not a batch queue.
++#   * `tool-subagent` omits `modelSelectionSettings`, so children inherit the
++#     parent's route instead of sampling the per-session user setting — the
++#     delegation story of this mode is "same engine, separate context".
++#   * two dedicated spawn rows give the doctrine its delegation shapes:
++#     `explore` (read-only fan-out searches, its own persona plus a
++#     `toolFilter` removing `edit`/`write`) and `judge` (the same read-only
++#     scoping, but the child reads rendered images itself with `read_image`
++#     and returns an evidence-backed verdict per image).
++#   * `tool-plan-mode` sits inside the planning group: the model can propose
++#     the switch into plan mode for non-trivial work, while the exit review
++#     stays with the user.
++#   * a `pangu-memory` row mounts the Pangu MCP memory server when the
++#     deployment opts in through the environment — the long-term-memory
++#     doctrine in the persona keeps its promise only when the server is there.
++#   * the workflow-engine and Ralph-loop rows of `standard` are absent: this
++#     mode's loop is the conversation itself, and no row here publishes a
++#     service, so the delegation rows sit flat with no `isolate` realm.
++#
++# This file is an AGENT-PLANE composition. The roster mounts it ONCE under a
++# standing scope; every session naming it joins by scope parentage, so the
++# tools and prompt sections registered here cover each joined agent while a
++# session's own state stays keyed per Session/Agent inside the plugins. The
++# host composition (`base.cordis.yml` + `web.cordis.yml`) keeps everything a
++# preset must not own: the registries themselves, the sandbox and approval
++# stack, persistence, and the model route.
++#
++# A service row here MUST sit inside a group carrying an `isolate` realm —
++# without one it publishes into the root realm, where another preset
++# publishing the same name collides and `dsh-agent-presets` rejects the mount.
++# Rows that only register into host registries (every row below) need none.
++
++# ── identity ────────────────────────────────────────────────────────────────
++
++# The preset's own persona, shadowing the deployment default for this agent.
++# `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
++# The doctrine here is the preset: it tells the model HOW to run unattended;
++# the rows below only make the promise keepable.
++- id: persona
++  name: '@deepseek-ai/dsh-persona'
++  config:
++    text: >-
++      You are an autonomous coding agent powered by the {{model}} model, running on the DeepSeek Harness. Your working directory is {{cwd}}.
++
++
++      Operating stance. You are operating autonomously: the user is not watching in real time and cannot answer questions mid-task. For reversible actions that follow from the request, proceed without asking; stop and ask only for destructive actions or genuine scope changes the user must decide. When you have enough information to act, act — do not re-derive what is already established, and do not narrate options you will not pursue.
++
++
++      Work in steps the user can see. For any multi-step task, write the plan with todo_write and keep it current: exactly one item in_progress at a time, marked completed the moment it is done, dropped when it stops mattering. The list is the working plan, not a report written afterwards.
++
++
++      Delegate breadth, keep depth. When a task means sweeping many files, directories, or naming conventions and you only need the conclusion, delegate to an `explore` subagent instead of reading everything yourself; write its prompt self-contained — the goal, what to return, the breadth — because it starts with no context from this conversation. Launch independent delegations in the same response so they run concurrently, and do not repeat the same search yourself while waiting. Work that needs your own judgment — reviewing or auditing specific code, multi-step changes — stays with you. When work produces or depends on rendered visuals — screenshots, mockups, before/after images — delegate the acceptance pass to a `judge` subagent with the image paths and the acceptance criteria: it reads the images itself and returns a pass/fail verdict with evidence for each. Never grade your own visual output; hand it to the judge. A subagent's final message is shown only to you: relay what matters in your own words.
++
++
++      Verify before you claim done. Run the checks, tests, or builds that cover the change and read what they say. Report outcomes faithfully: failures with their output, skipped steps as skipped. Prefer durable evidence over a passing glance; state plainly what is done and verified.
++
++
++      Communicate results, not process. Open the final answer with the outcome — what happened or what you found — then supporting detail in complete sentences that read on their own. Brief progress notes between tool calls are fine; everything the user needs must be in the final message, because that is the only one they are guaranteed to read. Match the reply to the question: a simple question gets a direct answer in prose, not headers and tables.
++
++
++      Learn across sessions. This preset carries the Pangu memory server (the `mcp__pangu__` tools) when the deployment enables it. At the start of a substantive task, search it with `mcp__pangu__pangu_search_memories` (or any `mcp__pangu__pangu_*` search tool the catalog offers) for what you already know about this project — prior decisions, pitfalls, conventions — and fold what you find into the plan. Before finishing a session that learned something durable, write it back with `mcp__pangu__pangu_add_memory`: what was learned, what broke and why, what to do differently next time. Record lessons that would change future work, not a running commentary — a memory full of noise is a memory nobody trusts.
++
++
++      ask_user_question is for choices that are genuinely the user's to make — trade-offs with no conventional default, or destructive actions. Where code lives, how current behavior works, and which obvious convention applies are yours to resolve by inspection. Plan mode is how approval becomes a gate instead of a phrase: before starting non-trivial implementation work, switch the session into plan mode with enter_plan_mode, ground the plan in inspection, and present it through exit_plan_mode — implementation starts only after approval. A plan the user has not approved is not permission to implement.
++
++- id: agent-instructions
++  name: '@deepseek-ai/dsh-agent-instructions'
++  config:
++    maxBytes: 65536
++
++# ── shell ───────────────────────────────────────────────────────────────────
++
++# `shell-env` stays in the HOST composition: `apps/cli/src/web.ts` injects it to
++# publish `DSH_WEB_URL`/`DSH_WEB_MODE`, and a host row that injects a service is
++# the criterion for host-plane ownership — injection resolves before any session
++# exists, so there is no agent to key by. Behind a preset realm those variables
++# never reached the model's shell at all. Both shell tools consume the host
++# registry from here; their executors (`bash-sandbox`/`pwsh-sandbox`) are
++# host-plane too.
++- id: tool-bash
++  name: '@deepseek-ai/dsh-tool-bash'
++  disabled: !!js process.platform === 'win32'
++
++- id: tool-pwsh
++  name: '@deepseek-ai/dsh-tool-pwsh'
++  disabled: !!js process.platform !== 'win32'
++
++# ── filesystem ──────────────────────────────────────────────────────────────
++
++# Both register into the host `tools` registry and provide nothing, so
++# they need no realm. The `fs` service and its policy stay in the host.
++- id: tool-fs
++  name: '@deepseek-ai/dsh-tool-fs'
++
++- id: tool-fs-search
++  name: '@deepseek-ai/dsh-tool-fs-search'
++  config:
++    sampleOverCapGlobResults: false
++
++# ── background jobs ────────────────────────────────────────────────────────
++
++# Only the model-facing controls. The task REGISTRY stays on the host plane:
++# its producers sit outside any realm this file could put it in — `tool-bash`
++# above resolves it with `ctx.get`, and an entry-local realm here is invisible
++# to every sibling row, so `run_in_background` would answer "background jobs
++# unavailable" while these controls sat in the catalog. The registry is keyed by
++# owning agent anyway, so one host instance serves every session. What a preset
++# chooses is whether its agent can collect and stop background work at all —
++# unattended work leans on it, so this preset keeps it.
++- id: tool-jobs
++  name: '@deepseek-ai/dsh-tool-jobs'
++
++# ── skills ──────────────────────────────────────────────────────────────────
++
++# The skill REGISTRY lives in the host composition and is layered per scope:
++# these rows register into THIS preset's layer of it, so they need no realm.
++# `skill-filesystem` contributes local-root discovery for agents on this preset, and
++# `tool-skill` gives them the catalog and loader; the merged catalog also
++# carries whatever the deployment registered globally (repository plugins).
++- id: skill-filesystem
++  name: '@deepseek-ai/dsh-skill-filesystem'
++
++- id: tool-skill
++  name: '@deepseek-ai/dsh-tool-skill'
++
++# ── goals ───────────────────────────────────────────────────────────────────
++
++# The goal service and session driver stay on the host plane, where the Gateway
++# can resolve them. The human command and model-facing tool register into this
++# preset's scoped layers.
++- id: command-goal
++  name: '@deepseek-ai/dsh-command-goal'
++
++- id: tool-goal
++  name: '@deepseek-ai/dsh-tool-goal'
++
++# ── plan mode ───────────────────────────────────────────────────────────────
++
++# Plan state is per-agent by nature, so an entry-local realm is not a
++# workaround here — it is the correct lifetime.
++- id: planning
++  name: cordis:group
++  group: true
++  isolate:
++    planMode: true
++  config:
++    - id: plan-mode
++      name: '@deepseek-ai/dsh-plan-mode'
++      config:
++        section: |
++              You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
++
++              Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
++
++              The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
++
++              Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
++
++              Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
++
++              When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
++
++    # The model's side of the loop: proposes the switch into plan mode for
++    # non-trivial work. Mounted inside this group so its injected `planMode`
++    # resolves to THIS realm's controller, not the host's.
++    - id: tool-plan-mode
++      name: '@deepseek-ai/dsh-tool-plan-mode'
++
++# ── compaction ──────────────────────────────────────────────────────────────
++
++# `compaction-basic` reads `toolResultPrune` through `ctx.get`, so the pruner must
++# share this realm rather than sit outside it.
++#
++# `tokenMeter` is deliberately NOT in this realm: the meter stays on the HOST
++# plane, and the rows here resolve that one instance. It keys every fold by
++# Session, and owns the context-meter projection units the browser reads for
++# every session — behind a realm those units would come and go with whichever
++# presets happen to be mounted. What a preset chooses is whether its agent
++# compacts at all, which is `compaction-basic` below. Unattended sessions run
++# long, so compaction is load-bearing here, not optional.
++- id: compaction
++  name: cordis:group
++  group: true
++  isolate:
++    compaction: true
++    toolResultPruner: true
++  config:
++    - id: compaction-basic
++      name: '@deepseek-ai/dsh-compaction-basic'
++
++    - id: command-compact
++      name: '@deepseek-ai/dsh-command-compact'
++
++    - id: tool-result-pruner
++      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
++      config:
++        thresholdChars: 8192
++        headChars: 4096
++        tailChars: 1024
++
++# ── delegation ──────────────────────────────────────────────────────────────
++
++# The `subagents` registry and its spawn/fork backends live in the HOST
++# composition: the registry is a process singleton whose cross-session queries
++# the api-proxy serves to the browser, and a provider name may only be
++# registered once. These rows contribute the delegation TOOLS, which resolve
++# that host registry — they publish no service, so unlike `standard`'s
++# delegation group (which isolates the workflow engine) they sit flat, needing
++# no realm.
++#
++# Delegation doctrine lives in the persona above; these rows are its
++# mechanical form. All default to `maxDepth: 3`.
++#
++# `subagent` — the general delegation. `modelSelectionSettings` is deliberately
++# omitted: children inherit the parent's route rather than sampling the
++# `subagent-model-selection` user setting, keeping the "same engine, separate
++# context" story (and keeping the inherited history eligible for prompt-cache
++# reuse on the child). `continuable` keeps a finished child's conversation
++# addressable through `send_message`.
++- id: tool-subagent-control
++  name: '@deepseek-ai/dsh-tool-subagent-control'
++
++- id: tool-subagent-list-agents
++  name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
++
++- id: tool-subagent
++  name: '@deepseek-ai/dsh-tool-subagent'
++  config:
++    provider: spawn
++    toolName: subagent
++    backgroundMode: continuable
++
++# `subagent_fork` — same-model continuation of THIS conversation with the
++# inherited history intact, so the child's prefix stays eligible for KV Cache
++# reuse. Model selection is omitted so provider/model stay equal to the parent;
++# fork is continuable like `subagent`.
++- id: tool-subagent-fork
++  name: '@deepseek-ai/dsh-tool-subagent'
++  config:
++    provider: fork
++    toolName: subagent_fork
++    backgroundMode: continuable
++
++# `explore` — the read-only fan-out row. `persona` shadows the deployment
++# persona for every child this row spawns, and `toolFilter` removes the
++# mutation tools from the child's catalog AND execution — the search-side
++# guarantee the persona's prose alone cannot make. Tool names must exist in the
++# child's catalog (`tool-fs` above registers both) or the mount fails loud.
++# One-shot by default: an exploration returns its report and is done.
++- id: tool-subagent-explore
++  name: '@deepseek-ai/dsh-tool-subagent'
++  config:
++    provider: spawn
++    toolName: explore
++    backgroundMode: one-shot
++    persona: >-
++      You are a read-only exploration agent. Search, read, and reason; never
++      modify anything: edit and write are removed from you, and bash must stay
++      read-only — no file writes or redirects into files, no commits, no state
++      changes. Ground every claim in what you actually read and cite it as
++      path:line. Answer the prompt you were given and nothing besides; your
++      final message is the only thing returned to the caller, so it must carry
++      the conclusion, the evidence, and enough references to act on — the
++      caller will not re-run your searches.
++    toolFilter:
++      deny:
++        - edit
++        - write
++
++# `judge` — the visual acceptance row. Same read-only scoping as `explore`,
++# but the persona makes the child READ the images itself (`read_image` is part
++# of `tool-fs` above) and return one evidence-backed verdict per image, so the
++# model never grades its own visual output. `read_image` refuses to execute on
++# a text-only route: judging needs an image-capable child model.
++- id: tool-subagent-judge
++  name: '@deepseek-ai/dsh-tool-subagent'
++  config:
++    provider: spawn
++    toolName: judge
++    backgroundMode: one-shot
++    persona: >-
++      You are a visual acceptance judge. You receive image paths and the
++      acceptance criteria; read EVERY image yourself with read_image before
++      judging anything — a screenshot you have not opened is not evidence. For
++      each image return one verdict line: pass or fail, then the issues you
++      can actually see, each tied to what is visible in that image; a clean
++      programmatic check quoted at you is not a verdict. Judge only what is
++      visible; do not speculate about code or causes. Read-only: edit and
++      write are removed from you, and bash must stay read-only. Your final
++      message is the only thing returned to the caller — the verdicts and the
++      evidence are the whole deliverable.
++    toolFilter:
++      deny:
++        - edit
++        - write
++
++# ── long-term memory (Pangu, opt-in) ────────────────────────────────────────
++
++# The memory doctrine in the persona keeps its promise only when the server is
++# there, so the row is opt-in by environment instead of a shipped assumption:
++# it activates only when `PANGU_API_KEY` is exported (the server authenticates
++# requests), and `PANGU_MCP_URL` moves the endpoint off the local default.
++# Pangu publishes 400+ tools; the allow list carries the four the doctrine
++# names, because every registered tool is catalog tokens the model pays for on
++# every request. `mcp-client` injects only `tools`, so the row needs no realm;
++# `failOnStartupError` defaults to false, so a server that is down degrades to
++# absent tools rather than a session that cannot start.
++- id: pangu-memory
++  name: '@deepseek-ai/dsh-mcp-client'
++  disabled: !!js (!process.env.PANGU_API_KEY)
++  config:
++    serverName: pangu
++    transport: streamable-http
++    url: !!js (process.env.PANGU_MCP_URL || 'http://127.0.0.1:19529/mcp')
++    headers:
++      X-API-Key: !!js (process.env.PANGU_API_KEY || '')
++    tools:
++      allow:
++        - pangu_search_memories
++        - pangu_fts_search
++        - pangu_recall
++        - pangu_add_memory
++
++# ── remaining model-facing rows ─────────────────────────────────────────────
++
++- id: tool-ask-user
++  name: '@deepseek-ai/dsh-tool-ask-user'
++
++# `allowParallelInProgress: false` is the todo discipline of this mode: the
++# list mirrors ZCode's working plan — exactly one front at a time — instead of
++# a batch queue. `standard` relaxes this to `true`.
++- id: tool-todo
++  name: '@deepseek-ai/dsh-tool-todo'
++  config:
++    allowParallelInProgress: false
++
++# The `web` service and its search provider stay in the host composition; only
++# the model-facing tool is per-session.
++- id: tool-web
++  name: '@deepseek-ai/dsh-tool-web'
++  config:
++    fetch: true
++    searchTimeoutMs: 60000
+diff --git a/packages/preset/agent-presets/presets/autonomous/preset.yml b/packages/preset/agent-presets/presets/autonomous/preset.yml
+new file mode 100644
+index 0000000000..385648971d
+--- /dev/null
++++ b/packages/preset/agent-presets/presets/autonomous/preset.yml
+@@ -0,0 +1,3 @@
++name: 自主模式
++description: 仿照 ZCode Agent 模式的自主编码 Agent：先探索后动手，可逆步骤自主推进，用任务清单跟踪进度，把只读探索分派给子代理，并在宣称完成前先验证。
++order: 5
+diff --git a/packages/schedule/automations/README.i18n.yaml b/packages/schedule/automations/README.i18n.yaml
+new file mode 100644
+index 0000000000..c45cf8daa6
+--- /dev/null
++++ b/packages/schedule/automations/README.i18n.yaml
+@@ -0,0 +1,6 @@
++# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
++# side as of the last confirmed-consistent state. Both languages carry equal authority;
++# after editing either side, bring the other along and re-record with:
++#   pnpm run verify-translation-pairing --write packages/schedule/automations/README.md
++README.md: 447b2b9465f108a45487655d807ad8fd9cb7ed14
++README.zh.md: 414e59389aa587440021bb9fb9930d32b90b170c
+diff --git a/packages/schedule/automations/README.md b/packages/schedule/automations/README.md
+new file mode 100644
+index 0000000000..447b2b9465
+--- /dev/null
++++ b/packages/schedule/automations/README.md
+@@ -0,0 +1,70 @@
++---
++description: "Cross-session scheduled automations: durable stored prompts that spawn a fresh session when due, for users and maintainers choosing, configuring, or debugging the capability."
++kind: "package-reference"
++---
++
++# @deepseek-ai/dsh-automations
++
++English | [中文](README.zh.md)
++
++## Summary
++
++`dsh-automations` gives an agent durable, cross-session scheduling: it stores a titled prompt together with a schedule and, when the schedule comes due, spawns a FRESH session over the recorded workspace and agent preset and delivers the prompt as an ordinary user message. Reminders (`dsh-schedule`) arrive inside the conversation that asked for them; automations outlive that conversation entirely — the creating session can end, the process can restart, and the next due fire still opens its own session. Three model-facing tools (`automation_create`, `automation_list`, `automation_cancel`) cover the lifecycle.
++
++## Table of Contents
++
++- [Use this package](#use-this-package)
++- [Understand the implementation](#understand-the-implementation)
++- [Model Experience](#model-experience)
++- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
++
++-----
++
++<a id="use-this-package"></a>
++## Use this package
++
++Mount it on the HOST plane with the storage stack: it injects `tools` and `storageDomain`, persists records in the `automations` storage domain, and owns one process-level due driver. The config carries three required bounds — `maxPromptBytes`, `minDelaySeconds`, `minIntervalSeconds` — a composition that omits them fails at load.
++
++### When to choose it
++
++Choose it when work should happen at a time, not in a conversation: nightly sweeps, delayed follow-ups, fixed-rate checks — each running unattended in its own session. Skip it when the outcome should land back into the current conversation; that is `dsh-schedule`'s contract.
++
++### Minimal configuration
++
++```yaml
++- id: automations
++  name: '@deepseek-ai/dsh-automations'
++  config:
++    maxPromptBytes: 65536
++    minDelaySeconds: 60
++    minIntervalSeconds: 60
++```
++
++`after` and `at` schedules are one-shot; `every` is fixed-rate recurring with an optional `maxRuns` ceiling. The creating agent anchors the record: its session cwd becomes the fired session's workspace and its composed preset is re-mounted at fire time, so a fire replays the creating environment without anyone present.
++
++<a id="understand-the-implementation"></a>
++## Understand the implementation
++
++`AutomationsService` opens the storage domain in its init, registers the three tools on the host tool layer, and starts the due driver. The driver is one re-armed timer: each wake fires every record due at that moment (a failed one-shot is retained with its `lastError` and never re-fires; a recurring record re-arms from its anchor so missed occurrences coalesce into one catch-up fire), then schedules the next wake. Firing composes the session through `ctx.agents.create` with the recorded `cwd` and preset — the same creation path the webhook ingress uses — attaches the workspace and title when those services are composed, and delivers the prompt behind a one-sentence framing naming the automation. Spawn-time services (`agents`, `agentPresets`, optional `workspaceRegistry`/`sessionTitle`) resolve at fire time and fail loud there, because registration never needs them.
++
++## Model Experience
++
++### Request context and condition
++
++#### What the model sees
++
++The generated [`automation_create` / `automation_list` / `automation_cancel` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-automations): create takes a title, a self-contained prompt, one of three schedule kinds, and an optional recurring ceiling; list renders one line per automation with next fire time, fire count, and the last failure; cancel takes an id. A fire is invisible to the creating session — it is a user message in the NEW session, prefixed by the automation framing.
++
++#### Token effect
++
++Fixed, small: three tool schemas in every request of every session on the deployment, plus the one-line list render per call.
++
++#### KV Cache effect
++
++The three schemas are a stable prefix member of every request; list/cancel results append. A fired automation does not touch the creating session's log at all, so scheduling never invalidates an existing conversation's reusable prefix.
++
++## Known Limitations and Deferred Work
++
++- **The process must be alive at the due time** — the driver is a process timer; occurrences missed while the host was down coalesce into one fire at the next tick or boot, and a one-shot whose moment passed while nothing ran fires late rather than being skipped.
++- **No cron expressions** — schedules are `after`/`at`/`every` like `dsh-schedule`; cron semantics would need a maintained parser and are deferred until a deployment asks.
++- **Fires are unreviewed** — a due automation spawns a session without a consent round-trip; the stored prompt was fixed at creation time, and the session runs under the host's default approval stack. A consent gate would need an approval-policy surface this package does not own.
+diff --git a/packages/schedule/automations/README.zh.md b/packages/schedule/automations/README.zh.md
+new file mode 100644
+index 0000000000..414e59389a
+--- /dev/null
++++ b/packages/schedule/automations/README.zh.md
+@@ -0,0 +1,70 @@
++---
++description: "跨会话定时自动化：持久化的存储提示词在到期时拉起全新会话，供选择、配置或调试该能力的用户与维护者阅读。"
++kind: "package-reference"
++---
++
++# @deepseek-ai/dsh-automations
++
++[English](README.md) | 中文
++
++## Summary
++
++`dsh-automations` 给 Agent 提供持久的跨会话调度：它把一条带标题的提示词连同日程一起存储，到期时在记录的工作区与 Agent 预设上拉起一个全新会话，并把提示词作为普通用户消息送达。提醒（`dsh-schedule`）抵达在发起请求的那场对话之内；自动化则完全超越那场对话——创建会话可以结束、进程可以重启，下一次到期仍会开出自己的会话。三个模型侧工具（`automation_create`、`automation_list`、`automation_cancel`）覆盖全部生命周期。
++
++## Table of Contents
++
++- [Use this package](#use-this-package)
++- [Understand the implementation](#understand-the-implementation)
++- [Model Experience](#model-experience)
++- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
++
++-----
++
++<a id="use-this-package"></a>
++## Use this package
++
++把它挂载在宿主面并配合存储栈：它注入 `tools` 与 `storageDomain`，把记录持久化在 `automations` 存储域中，并拥有一个进程级到期驱动器。config 携带三个必填上限——`maxPromptBytes`、`minDelaySeconds`、`minIntervalSeconds`——缺失的组装在加载时即失败。
++
++### When to choose it
++
++当工作应当在某个时刻发生、而不是在某场对话中发生时选择它：夜间清扫、延迟跟进、定频巡检——每项都在自己的会话中无人值守地运行。若结果需要落回当前对话，那属于 `dsh-schedule` 的契约。
++
++### Minimal configuration
++
++```yaml
++- id: automations
++  name: '@deepseek-ai/dsh-automations'
++  config:
++    maxPromptBytes: 65536
++    minDelaySeconds: 60
++    minIntervalSeconds: 60
++```
++
++`after` 与 `at` 是一次性；`every` 是固定频率循环，可带 `maxRuns` 上限。创建方 Agent 锚定记录：它的会话 cwd 成为触发会话的工作区，它所组装的预设会在触发时重新挂载，因此触发会重放创建时的环境，无需任何人在场。
++
++<a id="understand-the-implementation"></a>
++## Understand the implementation
++
++`AutomationsService` 在 init 中打开存储域、在宿主工具层注册三个工具，并启动到期驱动器。驱动器是一个不断重设的定时器：每次唤醒触发所有当刻到期的记录（失败的一次性会带着 `lastError` 保留且不再触发；循环记录从锚点重设，因此进程停机期间错过的触发合并为一次补偿触发），然后安排下一次唤醒。触发通过 `ctx.agents.create` 以记录的 `cwd` 与预设组装会话——与 webhook 入口相同的创建路径——在那些服务已组装时附加工作区与标题，并把提示词放在一句点名自动化的框架文字之后送达。触发期服务（`agents`、`agentPresets`、可选的 `workspaceRegistry`/`sessionTitle`）在触发时解析并在彼处报错，因为注册从不需要它们。
++
++## Model Experience
++
++### Request context and condition
++
++#### What the model sees
++
++生成的 [`automation_create` / `automation_list` / `automation_cancel` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-automations)：create 接收标题、一段自包含提示词、三种日程之一，以及可选的循环上限；list 每条自动化渲染一行，含下次触发时间、触发次数与最近失败；cancel 接收 id。触发对创建会话不可见——它是新会话里的一条用户消息，前缀是自动化框架文字。
++
++#### Token effect
++
++固定且很小：部署上每个会话的每个请求里有三个工具 schema，外加每次调用一行的 list 渲染。
++
++#### KV Cache effect
++
++三个 schema 是每个请求的稳定前缀成员；list/cancel 结果只追加。一次触发完全不触碰创建会话的日志，因此调度绝不会使既有对话的可复用前缀失效。
++
++## Known Limitations and Deferred Work
++
++- **到期时进程必须存活**——驱动器是进程定时器；宿主停机期间错过的触发在下一个 tick 或启动时合并为一次触发，错过时刻的一次性会迟到触发而非跳过。
++- **不支持 cron 表达式**——日程与 `dsh-schedule` 一致地使用 `after`/`at`/`every`；cron 语义需要维护中的解析器，留待部署提出。
++- **触发不经评审**——到期自动化拉起会话没有同意往返；存储提示词在创建时即固定，会话运行在宿主默认审批栈之下。同意门控需要本包不持有的审批策略面。
+diff --git a/packages/schedule/automations/package.json b/packages/schedule/automations/package.json
+new file mode 100644
+index 0000000000..a8d490ff43
+--- /dev/null
++++ b/packages/schedule/automations/package.json
+@@ -0,0 +1,64 @@
++{
++  "name": "@deepseek-ai/dsh-automations",
++  "description": "Cross-session scheduled automations: durable stored prompts that spawn a fresh session when due",
++  "version": "0.1.2-alpha.1",
++  "publishConfig": {
++    "access": "public"
++  },
++  "repository": {
++    "type": "git",
++    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
++    "directory": "packages/schedule/automations"
++  },
++  "type": "module",
++  "main": "lib/index.js",
++  "types": "lib/types/index.d.ts",
++  "exports": {
++    ".": {
++      "types": "./lib/types/index.d.ts",
++      "default": "./lib/index.js"
++    },
++    "./invariant": {
++      "types": "./lib/types/invariant.d.ts",
++      "default": "./lib/invariant.js"
++    },
++    "./src/*": "./src/*",
++    "./package.json": "./package.json"
++  },
++  "files": [
++    "lib/index.js",
++    "lib/invariant.js",
++    "lib/types/**/*.d.ts"
++  ],
++  "license": "MIT",
++  "dependencies": {
++    "@deepseek-ai/schemastery": "workspace:^",
++    "zod": "^4.4.3"
++  },
++  "peerDependencies": {
++    "@deepseek-ai/dsh-agent": "workspace:^",
++    "@deepseek-ai/dsh-agent-presets": "workspace:^",
++    "@deepseek-ai/dsh-brand": "workspace:^",
++    "@deepseek-ai/dsh-llm": "workspace:^",
++    "@deepseek-ai/dsh-session": "workspace:^",
++    "@deepseek-ai/dsh-session-title": "workspace:^",
++    "@deepseek-ai/dsh-storage-domain": "workspace:^",
++    "@deepseek-ai/dsh-tools": "workspace:^",
++    "@deepseek-ai/dsh-workspace": "workspace:^",
++    "@deepseek-ai/cordis": "workspace:^"
++  },
++  "devDependencies": {
++    "@deepseek-ai/cordis": "workspace:^",
++    "@deepseek-ai/dsh-agent": "workspace:^",
++    "@deepseek-ai/dsh-agent-presets": "workspace:^",
++    "@deepseek-ai/dsh-brand": "workspace:^",
++    "@deepseek-ai/dsh-llm": "workspace:^",
++    "@deepseek-ai/dsh-session": "workspace:^",
++    "@deepseek-ai/dsh-session-title": "workspace:^",
++    "@deepseek-ai/dsh-storage": "workspace:^",
++    "@deepseek-ai/dsh-storage-domain": "workspace:^",
++    "@deepseek-ai/dsh-storage-json": "workspace:^",
++    "@deepseek-ai/dsh-tools": "workspace:^",
++    "@deepseek-ai/dsh-workspace": "workspace:^"
++  }
++}
+diff --git a/packages/schedule/automations/src/domain.ts b/packages/schedule/automations/src/domain.ts
+new file mode 100644
+index 0000000000..d88c95648c
+--- /dev/null
++++ b/packages/schedule/automations/src/domain.ts
+@@ -0,0 +1,161 @@
++/**
++ * Pure automation domain: input validation, due-time arithmetic, and the
++ * framing text the spawned session receives. No IO and no clock access —
++ * every function takes `now` explicitly, so the driver's decisions are
++ * testable against fake timers.
++ * @module @deepseek-ai/dsh-automations/domain
++ */
++
++import { Buffer } from 'node:buffer'
++import { randomUUID } from 'node:crypto'
++import type { AutomationId, AutomationRecord, AutomationSchedule, AutomationView } from './types.ts'
++
++/** Rejected creation input, with the reason the model can correct. */
++export class AutomationInputError extends Error {}
++
++/** Allocate one opaque automation id. */
++export function allocateAutomationId(): AutomationId {
++  return randomUUID() as AutomationId
++}
++
++/** Upper bound for a title, kept so list output stays a picker row, not a transcript. */
++export const MAX_TITLE_BYTES = 256
++
++/** Validate and normalize one creation request against the deployment limits. */
++export function validateAutomationInput(input: {
++  title: unknown
++  prompt: unknown
++  schedule: unknown
++  maxRuns: unknown
++}, limits: { maxPromptBytes: number; minDelaySeconds: number; minIntervalSeconds: number }): {
++  title: string
++  prompt: string
++  schedule: AutomationSchedule
++  maxRuns: number | undefined
++} {
++  const title = requireText(input.title, 'title')
++  if (Buffer.byteLength(title, 'utf8') > MAX_TITLE_BYTES) {
++    throw new AutomationInputError(`title exceeds ${String(MAX_TITLE_BYTES)} bytes`)
++  }
++  const prompt = requireText(input.prompt, 'prompt')
++  if (Buffer.byteLength(prompt, 'utf8') > limits.maxPromptBytes) {
++    throw new AutomationInputError(`prompt exceeds the configured maximum of ${String(limits.maxPromptBytes)} bytes`)
++  }
++  const schedule = validateSchedule(input.schedule, limits)
++  const maxRuns = validateMaxRuns(input.maxRuns, schedule)
++  return { title, prompt, schedule, maxRuns }
++}
++
++function requireText(value: unknown, field: string): string {
++  if (typeof value !== 'string' || value.trim() === '') {
++    throw new AutomationInputError(`${field} must be a non-empty string`)
++  }
++  return value
++}
++
++function validateSchedule(value: unknown, limits: {
++  minDelaySeconds: number
++  minIntervalSeconds: number
++}): AutomationSchedule {
++  if (typeof value !== 'object' || value === null) {
++    throw new AutomationInputError('schedule must be an object with a `kind`')
++  }
++  const { kind } = value as { kind?: unknown }
++  if (kind === 'after') {
++    const { delaySeconds } = value as { delaySeconds?: unknown }
++    if (typeof delaySeconds !== 'number' || !Number.isSafeInteger(delaySeconds)
++      || delaySeconds < limits.minDelaySeconds) {
++      throw new AutomationInputError(
++        `after requires an integral delaySeconds of at least ${String(limits.minDelaySeconds)}`,
++      )
++    }
++    return { kind: 'after', delaySeconds }
++  }
++  if (kind === 'at') {
++    const { at } = value as { at?: unknown }
++    if (typeof at !== 'string' || !Number.isFinite(Date.parse(at))) {
++      throw new AutomationInputError('at requires an ISO-8601 `at` timestamp')
++    }
++    return { kind: 'at', at: new Date(Date.parse(at)).toISOString() }
++  }
++  if (kind === 'every') {
++    const { intervalSeconds } = value as { intervalSeconds?: unknown }
++    if (typeof intervalSeconds !== 'number' || !Number.isSafeInteger(intervalSeconds)
++      || intervalSeconds < limits.minIntervalSeconds) {
++      throw new AutomationInputError(
++        `every requires an integral intervalSeconds of at least ${String(limits.minIntervalSeconds)}`,
++      )
++    }
++    return { kind: 'every', intervalSeconds }
++  }
++  throw new AutomationInputError('schedule.kind must be one of "after", "at", or "every"')
++}
++
++function validateMaxRuns(value: unknown, schedule: AutomationSchedule): number | undefined {
++  if (value === undefined) return undefined
++  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
++    throw new AutomationInputError('maxRuns must be a positive integer when present')
++  }
++  if (schedule.kind !== 'every') {
++    throw new AutomationInputError('maxRuns applies only to recurring ("every") automations')
++  }
++  return value
++}
++
++/** The first due time of one validated schedule, ISO-encoded. */
++export function resolveDueAt(schedule: AutomationSchedule, now: number): string {
++  if (schedule.kind === 'after') return new Date(now + schedule.delaySeconds * 1000).toISOString()
++  if (schedule.kind === 'at') return schedule.at
++  return new Date(now + schedule.intervalSeconds * 1000).toISOString()
++}
++
++/**
++ * The next fixed-rate occurrence strictly after `now`, anchored on the
++ * recorded due time. Occurrences that passed while the process was down
++ * coalesce: the answer is the first anchor multiple past `now`, never a
++ * burst of catch-up fires.
++ */
++export function nextRecurringAt(dueAt: string, intervalSeconds: number, now: number): string {
++  const intervalMs = intervalSeconds * 1000
++  const anchor = Date.parse(dueAt)
++  const elapsed = now - anchor
++  const skipped = elapsed > 0 ? Math.floor(elapsed / intervalMs) + 1 : 1
++  return new Date(anchor + skipped * intervalMs).toISOString()
++}
++
++/** Whether one record is due at `now` and may fire (a failed one-shot never re-fires). */
++export function isDue(record: AutomationRecord, now: number): boolean {
++  if (record.lastError !== undefined && record.schedule.kind !== 'every') return false
++  if (record.maxRuns !== undefined && record.fireCount >= record.maxRuns) return false
++  return Date.parse(record.scheduledAt) <= now
++}
++
++/** Whether one record has exhausted its fire ceiling. */
++export function isExhausted(record: AutomationRecord): boolean {
++  return record.maxRuns !== undefined && record.fireCount >= record.maxRuns
++}
++
++/** The model-facing projection of one record, with absent fields omitted. */
++export function viewOf(record: AutomationRecord): AutomationView {
++  return {
++    id: record.id,
++    title: record.title,
++    schedule: record.schedule,
++    nextRunAt: record.scheduledAt,
++    fireCount: record.fireCount,
++    ...(record.maxRuns === undefined ? {} : { maxRuns: record.maxRuns }),
++    ...(record.lastFiredAt === undefined ? {} : { lastFiredAt: record.lastFiredAt }),
++    ...(record.lastError === undefined ? {} : { lastError: record.lastError }),
++  }
++}
++
++/**
++ * The user-role framing that precedes the stored prompt in the spawned
++ * session: it names the automation so the model knows the work was scheduled,
++ * not conversational, and should be carried to completion and reported.
++ */
++export function renderAutomationFraming(record: AutomationRecord, occurrence: number): string {
++  return `This task was dispatched by the scheduled automation "${record.title}" `
++    + `(occurrence ${String(occurrence)}, scheduled ${record.scheduledAt}). `
++    + 'Work it autonomously to completion, then report the outcome.'
++}
+diff --git a/packages/schedule/automations/src/index.ts b/packages/schedule/automations/src/index.ts
+new file mode 100644
+index 0000000000..f978be8348
+--- /dev/null
++++ b/packages/schedule/automations/src/index.ts
+@@ -0,0 +1,462 @@
++/**
++ * Cross-session automations (`ctx.automations`): durable stored prompts that
++ * spawn a FRESH session when due — the scheduling counterpart of
++ * `dsh-schedule`, whose reminders stay inside one conversation.
++ *
++ * The service is a host-plane singleton: automations must outlive the session
++ * that created them, so records persist in the `automations` storage domain
++ * (not any session log) and the due driver runs on one process-level timer.
++ * Firing composes a new root session over the recorded workspace and agent
++ * preset — the same creation path the webhook ingress uses — and delivers the
++ * stored prompt as an ordinary user message. The process must be alive at the
++ * due time: occurrences missed while down coalesce into one catch-up fire at
++ * the next boot or tick.
++ *
++ * The spawn-time services (`agents`, `agentPresets`, and the optional
++ * `workspaceRegistry` / `sessionTitle`) are resolved at FIRE time rather than
++ * injected: registration and the model-facing tools never need them, and a
++ * composition that cannot spawn sessions fails loud on the first due record
++ * instead of at load.
++ * @module @deepseek-ai/dsh-automations
++ */
++
++import { randomUUID } from 'node:crypto'
++import { Context, Service } from '@deepseek-ai/cordis'
++import s from '@deepseek-ai/schemastery'
++import { createUserMessage } from '@deepseek-ai/dsh-llm'
++import type { JsonValue } from '@deepseek-ai/dsh-session'
++import { SessionId } from '@deepseek-ai/dsh-session'
++import { defineTool } from '@deepseek-ai/dsh-tools'
++// Type-only edges: `ctx.tools` is declaration-merged by dsh-tools; the spawn
++// path resolves `agents` and `agentPresets` through their merged Context faces.
++import type {} from '@deepseek-ai/dsh-tools'
++import type { Agent, AgentRegistry } from '@deepseek-ai/dsh-agent'
++import type {} from '@deepseek-ai/dsh-agent-presets'
++import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
++import {
++  allocateAutomationId,
++  isDue,
++  isExhausted,
++  nextRecurringAt,
++  renderAutomationFraming,
++  resolveDueAt,
++  validateAutomationInput,
++  viewOf,
++} from './domain.ts'
++import { automationsDomainSpec } from './spec.ts'
++import type { AutomationCreateResult, AutomationRecord, AutomationView } from './types.ts'
++
++/** Cordis plugin name. */
++export const name = 'automations'
++
++/** Services required to register the tools and persist records. */
++export const inject = ['tools', 'storageDomain']
++
++/** Largest delay a Node timer represents without clamping. */
++const MAX_TIMER_DELAY_MS = 2_147_483_647
++
++/** Deployment-varying limits of the create path. */
++export interface Config {
++  /** Byte ceiling on one stored prompt. */
++  maxPromptBytes: number
++  /** Lower bound for a one-shot `after` delay, in seconds. */
++  minDelaySeconds: number
++  /** Lower bound for a fixed-rate interval, in seconds. */
++  minIntervalSeconds: number
++}
++
++/** Runtime schema for {@link Config}; both bounds fail load when missing. */
++export const Config: s<Config> = s.object({
++  maxPromptBytes: s.number().step(1).min(1).required(),
++  minDelaySeconds: s.number().step(1).min(1).required(),
++  minIntervalSeconds: s.number().step(1).min(1).required(),
++})
++
++function resolveLimits(config: Partial<Config>): Config {
++  for (const key of ['maxPromptBytes', 'minDelaySeconds', 'minIntervalSeconds'] as const) {
++    const value = config[key]
++    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
++      throw new Error(`automations: config.${key} must be a positive integer, got ${String(value)}`)
++    }
++  }
++  return {
++    maxPromptBytes: config.maxPromptBytes,
++    minDelaySeconds: config.minDelaySeconds,
++    minIntervalSeconds: config.minIntervalSeconds,
++  } as Config
++}
++
++/** Resolve one fire-time service, failing loud when the composition lacks it. */
++function requireAgents(ctx: Context): AgentRegistry {
++  const agents = ctx.get('agents')
++  if (agents === undefined) {
++    throw new Error('automations: the `agents` service is not composed; sessions cannot be spawned')
++  }
++  return agents
++}
++
++/**
++ * Compose one fresh root session for a fired automation and deliver its
++ * prompt — the webhook ingress creation path with the automation's recorded
++ * workspace and preset. The workspace registry and session title services are
++ * optional refinements: absent registry keeps the session file-backed by its
++ * cwd, absent titler keeps the default title.
++ * @param ctx - host context that owns the resulting agent.
++ * @param record - the automation being fired.
++ * @param occurrence - 1-based fire attempt count, for the framing text.
++ * @param signal - cancellation through publication.
++ */
++export async function spawnAutomationSession(
++  ctx: Context,
++  record: AutomationRecord,
++  occurrence: number,
++  signal: AbortSignal,
++): Promise<void> {
++  const agents = requireAgents(ctx)
++  const presets = ctx.get('agentPresets')
++  const workspaces = ctx.get('workspaceRegistry')
++  const titler = ctx.get('sessionTitle')
++  const preset = presets === undefined ? undefined : await presets.resolve(record.agentPreset)
++  if (presets !== undefined && preset !== undefined) await presets.standingKeyFor(preset.id)
++  signal.throwIfAborted()
++
++  const sessionId = SessionId(`automation-${randomUUID()}`)
++  const handle = await agents.create({
++    sessionId,
++    signal,
++    meta: {
++      cwd: record.cwd,
++      ...(preset !== undefined ? { agentPreset: preset.id } : {}),
++    },
++    ...(presets !== undefined && preset !== undefined
++      ? { setup: async (agentCtx: Context) => { await presets.mount(agentCtx, preset.id) } }
++      : {}),
++  })
++
++  let attached: { detachSession(sessionId: SessionId): Promise<void> } | undefined
++  try {
++    signal.throwIfAborted()
++    if (workspaces !== undefined) {
++      const workspace = await workspaces.create(record.cwd)
++      await workspace.attachSession(sessionId)
++      attached = workspace
++    }
++    if (titler !== undefined) titler.rename(handle.agent.session, record.title)
++    handle.agent.followup(createUserMessage({
++      content: [{
++        type: 'text',
++        text: `${renderAutomationFraming(record, occurrence)}\n\n${record.prompt}`,
++      }],
++      source: {
++        kind: 'plugin',
++        plugin: 'automations',
++        form: 'notice',
++        summary: `scheduled automation "${record.title}" fired`,
++      },
++    }))
++  } catch (error: unknown) {
++    if (attached !== undefined) {
++      try {
++        await attached.detachSession(sessionId)
++      } catch (rollbackError: unknown) {
++        ctx.logger?.warn('automations: workspace detach for session "%s" failed: %o', sessionId, rollbackError)
++      }
++    }
++    try {
++      await handle.dispose()
++    } catch (disposeError: unknown) {
++      ctx.logger?.warn('automations: failed to dispose session "%s" after a failed fire: %o', sessionId, disposeError)
++    }
++    throw error
++  }
++}
++
++/**
++ * The automations runtime: owns the durable table, the due driver, and the
++ * three model-facing tools. One instance per process, keyed by nothing —
++ * records are global by design.
++ */
++export class AutomationsService extends Service {
++  /** Services required to register the tools and persist records. */
++  static inject = ['tools', 'storageDomain']
++
++  /** Loader-validated deployment limits. */
++  static Config: s<Config> = Config
++
++  private readonly limits: Config
++  private table: KvTable<string, AutomationRecord> | undefined
++  private timer: ReturnType<typeof setTimeout> | undefined
++  private tail: Promise<void> = Promise.resolve()
++  private driving = false
++  private disposed = false
++
++  constructor(ctx: Context, config: Partial<Config>) {
++    super(ctx, 'automations')
++    this.limits = resolveLimits(config)
++  }
++
++  /** Open the domain, install the tools, and start the due driver. */
++  protected async [Service.init](): Promise<void> {
++    const domain = await this.ctx.storageDomain.open(automationsDomainSpec)
++    this.table = domain.table('automations')
++    const disposeTools = this.registerTools()
++    this.ctx.effect(() => async () => {
++      this.disposed = true
++      if (this.timer !== undefined) clearTimeout(this.timer)
++      await this.tail
++      disposeTools()
++      await domain.close()
++    }, 'automations.dispose')
++    this.requestDrive()
++  }
++
++  private requireTable(): KvTable<string, AutomationRecord> {
++    if (this.table === undefined) throw new Error('automations: service not initialized')
++    return this.table
++  }
++
++  /** Register the three model-facing tools on the host layer. */
++  private registerTools(): () => void {
++    const disposeCreate = this.ctx.tools.register(defineTool({
++      name: 'automation_create',
++      description: 'Schedule a recurring or one-shot automation: store a prompt that spawns a FRESH session in this workspace when due. The process must be running at the due time; missed occurrences coalesce into one catch-up fire.',
++      parameters: {
++        title: {
++          type: 'string',
++          required: true,
++          description: 'A short (3-5 word) label shown in list output and as the spawned session title.',
++        },
++        prompt: {
++          type: 'string',
++          required: true,
++          description: 'The complete, self-contained task the spawned session will receive as its user message. It starts with no context from this conversation.',
++        },
++        kind: {
++          type: 'string',
++          required: true,
++          description: '"after" fires once delay_seconds from now; "at" fires once at the ISO-8601 `at` timestamp; "every" fires on a fixed rate of interval_seconds. "after" and "at" are one-shot.',
++        },
++        delay_seconds: { type: 'number', description: 'Seconds from now until the one-shot fire (kind "after").' },
++        at: { type: 'string', description: 'ISO-8601 timestamp of the one-shot fire (kind "at").' },
++        interval_seconds: { type: 'number', description: 'Fixed-rate interval in seconds (kind "every").' },
++        max_runs: { type: 'number', description: 'Fire ceiling for recurring ("every") automations; omit for unbounded.' },
++      },
++      output: {
++        schema: {
++          type: 'object',
++          additionalProperties: false,
++          properties: {
++            id: { type: 'string', required: true },
++            nextRunAt: { type: 'string', required: true },
++          },
++        },
++        render: (_args, value) => [{
++          type: 'text',
++          text: `automation ${value.id} created; first fire scheduled at ${value.nextRunAt}`,
++        }],
++      },
++      isConcurrencySafe: () => true,
++      execute: async (args, exec) => this.create(args, exec.agent),
++    }))
++
++    const disposeList = this.ctx.tools.register(defineTool({
++      name: 'automation_list',
++      description: 'List the scheduled automations of this deployment with their next fire times.',
++      parameters: {},
++      output: {
++        schema: {
++          type: 'object',
++          additionalProperties: false,
++          properties: {
++            automations: { type: 'array', required: true, items: { type: 'json' } },
++          },
++        },
++        render: (_args, value) => [{
++          type: 'text',
++          text: value.automations.length === 0
++            ? 'no scheduled automations'
++            : value.automations
++              .map(entry => entry as unknown as AutomationView)
++              .map(view =>
++                `${view.id} "${view.title}" ${view.schedule.kind} next=${view.nextRunAt} fires=${String(view.fireCount)}`
++                + (view.lastError === undefined ? '' : ` lastError="${view.lastError}"`))
++              .join('\n'),
++        }],
++      },
++      isConcurrencySafe: () => true,
++      execute: async () => ({ automations: this.list() as unknown as JsonValue[] }),
++    }))
++
++    const disposeCancel = this.ctx.tools.register(defineTool({
++      name: 'automation_cancel',
++      description: 'Cancel one scheduled automation by id. Idempotent per id: cancelling an unknown id reports so.',
++      parameters: {
++        id: { type: 'string', required: true, description: 'The automation id from automation_create or automation_list.' },
++      },
++      output: {
++        schema: {
++          type: 'object',
++          additionalProperties: false,
++          properties: {
++            cancelled: { type: 'boolean', required: true, const: true },
++          },
++        },
++        render: () => [{ type: 'text', text: 'automation cancelled' }],
++      },
++      isConcurrencySafe: () => true,
++      execute: async (args: { id?: unknown }) => {
++        const cancelled = await this.cancel(String(args.id))
++        if (!cancelled) throw new Error(`no automation with id "${String(args.id)}"`)
++        return { cancelled: true as const }
++      },
++    }))
++
++    return () => { disposeCreate(); disposeList(); disposeCancel() }
++  }
++
++  /**
++   * Validate, persist, and schedule one automation from the create tool's
++   * flat arguments. The recording agent anchors the workspace (its session
++   * cwd) and the preset (its own composition), so the fire replays the same
++   * environment even across process restarts.
++   */
++  private async create(
++    args: Record<string, unknown>,
++    agent: Agent | undefined,
++  ): Promise<AutomationCreateResult> {
++    if (agent === undefined) {
++      throw new Error('automation_create requires a calling agent to anchor the workspace and preset')
++    }
++    const cwd = agent.session.header.cwd
++    if (cwd === undefined) throw new Error('automation_create requires the calling session to have a workspace cwd')
++    const presets = this.ctx.get('agentPresets')
++    const agentPreset = presets?.composedPreset(agent.ctx)
++    const kind = args.kind
++    const scheduleInput = {
++      kind,
++      ...(kind === 'after' ? { delaySeconds: args.delay_seconds } : {}),
++      ...(kind === 'at' ? { at: args.at } : {}),
++      ...(kind === 'every' ? { intervalSeconds: args.interval_seconds } : {}),
++    }
++    const validated = validateAutomationInput({
++      title: args.title,
++      prompt: args.prompt,
++      schedule: scheduleInput,
++      maxRuns: args.max_runs,
++    }, this.limits)
++    const id = allocateAutomationId()
++    const now = Date.now()
++    const record: AutomationRecord = {
++      id,
++      title: validated.title,
++      prompt: validated.prompt,
++      schedule: validated.schedule,
++      cwd,
++      ...(agentPreset === undefined ? {} : { agentPreset }),
++      createdAt: now,
++      scheduledAt: resolveDueAt(validated.schedule, now),
++      fireCount: 0,
++      ...(validated.maxRuns === undefined ? {} : { maxRuns: validated.maxRuns }),
++    }
++    await this.requireTable().put(record.id, record)
++    this.requestDrive()
++    return { id: record.id, nextRunAt: record.scheduledAt }
++  }
++
++  /** Every automation as a model-facing view, soonest fire first. */
++  private list(): AutomationView[] {
++    return [...this.requireTable().entries()]
++      .map(([, record]) => viewOf(record))
++      .sort((left, right) => Date.parse(left.nextRunAt) - Date.parse(right.nextRunAt))
++  }
++
++  /** Remove one automation durably; `false` when the id is unknown. */
++  private async cancel(id: string): Promise<boolean> {
++    return await this.requireTable().delete(id)
++  }
++
++  /** Request a due check; coalesces while a drive is already running. */
++  private requestDrive(): void {
++    if (this.disposed) return
++    queueMicrotask(() => { void this.drive() })
++  }
++
++  /** Fire everything due, then re-arm the wake timer on the next record. */
++  private async drive(): Promise<void> {
++    if (this.driving || this.disposed) return
++    this.driving = true
++    try {
++      const now = Date.now()
++      const due = [...this.requireTable().entries()]
++        .map(([, record]) => record)
++        .filter(record => isDue(record, now))
++      for (const record of due) {
++        const previous = this.tail
++        this.tail = (async () => {
++          await previous
++          await this.fire(record)
++        })()
++      }
++      await this.tail
++    } finally {
++      this.driving = false
++    }
++    this.rearm()
++  }
++
++  /** Fire one record and fold the outcome back into the durable table. */
++  private async fire(record: AutomationRecord): Promise<void> {
++    const now = Date.now()
++    const firedAt = new Date(now).toISOString()
++    const occurrence = record.fireCount + 1
++    let lastError: string | undefined
++    try {
++      await spawnAutomationSession(this.ctx, record, occurrence, new AbortController().signal)
++    } catch (error: unknown) {
++      lastError = error instanceof Error ? error.message : String(error)
++      this.ctx.logger?.error('automations: fire of "%s" failed: %s', record.title, lastError)
++    }
++    const table = this.requireTable()
++    const current = table.get(record.id)
++    if (current === undefined) return
++    if (record.schedule.kind === 'every') {
++      const scheduledAt = lastError === undefined
++        ? nextRecurringAt(record.scheduledAt, record.schedule.intervalSeconds, now)
++        : record.scheduledAt
++      const updated: AutomationRecord = {
++        ...record,
++        fireCount: occurrence,
++        lastFiredAt: firedAt,
++        scheduledAt,
++        ...(lastError === undefined ? {} : { lastError }),
++      }
++      if (lastError === undefined && isExhausted(updated)) await table.delete(record.id)
++      else await table.put(record.id, updated)
++      return
++    }
++    if (lastError === undefined) await table.delete(record.id)
++    else await table.put(record.id, { ...record, fireCount: occurrence, lastFiredAt: firedAt, lastError })
++  }
++
++  /** Schedule the next wake at the soonest actionable due time. */
++  private rearm(): void {
++    if (this.disposed) return
++    if (this.timer !== undefined) clearTimeout(this.timer)
++    const now = Date.now()
++    const next = [...this.requireTable().entries()]
++      .map(([, record]) => record)
++      .filter(record => isDue(record, Number.POSITIVE_INFINITY) || Date.parse(record.scheduledAt) > now)
++      .map(record => Date.parse(record.scheduledAt))
++      .reduce<number | undefined>((selected, candidate) => {
++        return candidate < (selected ?? Number.POSITIVE_INFINITY) ? candidate : selected
++      }, undefined)
++    if (next === undefined) return
++    const delay = Math.max(0, Math.min(next - now, MAX_TIMER_DELAY_MS))
++    this.timer = setTimeout(() => { void this.drive() }, delay)
++  }
++}
++
++export type { AutomationId, AutomationCreateResult, AutomationRecord, AutomationView } from './types.ts'
++export { AutomationInputError } from './domain.ts'
++export { automationsDomainSpec } from './spec.ts'
++export default AutomationsService
+diff --git a/packages/schedule/automations/src/invariant.ts b/packages/schedule/automations/src/invariant.ts
+new file mode 100644
+index 0000000000..65d6bb80fb
+--- /dev/null
++++ b/packages/schedule/automations/src/invariant.ts
+@@ -0,0 +1,23 @@
++/** Package-owned invariant companion for `@deepseek-ai/dsh-automations`. */
++
++import type { Context } from '@deepseek-ai/cordis'
++import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
++
++const PACKAGE_NAME = '@deepseek-ai/dsh-automations'
++
++/** Cordis companion plugin name. */
++export const name = 'automations-invariant'
++/** Invariant registry dependency. */
++export const inject = ['invariants']
++
++/**
++ * No runtime invariant: the durable record shape is validated by the
++ * storage-domain schema at open, and the spawn-time relationships (session
++ * creation, preset mounting, workspace attachment) are owned and asserted by
++ * their own packages. This package only schedules and forwards.
++ */
++const install: InvariantInstaller = () => {}
++
++/** Register this package's invariant ownership. */
++export const apply = (ctx: Context): Promise<() => void> =>
++  Promise.resolve(ctx.invariants.register(PACKAGE_NAME, install))
+diff --git a/packages/schedule/automations/src/spec.ts b/packages/schedule/automations/src/spec.ts
+new file mode 100644
+index 0000000000..ef5dd9db6b
+--- /dev/null
++++ b/packages/schedule/automations/src/spec.ts
+@@ -0,0 +1,47 @@
++/**
++ * Durable storage-domain declaration for cross-session automations. One flat
++ * table keyed by automation id; the record schema is the durable boundary, so
++ * unknown fields and malformed shapes reject at open instead of reaching the
++ * driver.
++ * @module @deepseek-ai/dsh-automations/spec
++ */
++
++import { z } from 'zod'
++import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
++import type { AutomationRecord, AutomationSchedule } from './types.ts'
++
++const isoTimestamp = z.string().refine(value => Number.isFinite(Date.parse(value)), {
++  message: 'must be an ISO-8601 timestamp',
++})
++
++/** Runtime schema for one persisted schedule. */
++export const automationScheduleSchema = z.union([
++  z.object({ kind: z.literal('after'), delaySeconds: z.number().int().positive() }),
++  z.object({ kind: z.literal('at'), at: isoTimestamp }),
++  z.object({ kind: z.literal('every'), intervalSeconds: z.number().int().positive() }),
++]) satisfies z.ZodType<AutomationSchedule>
++
++/** Runtime schema for one persisted automation record. */
++export const automationRecordSchema = z.object({
++  id: z.string().min(1),
++  title: z.string().min(1),
++  prompt: z.string().min(1),
++  schedule: automationScheduleSchema,
++  cwd: z.string().min(1),
++  agentPreset: z.string().min(1).optional(),
++  createdAt: z.number().int().nonnegative(),
++  scheduledAt: isoTimestamp,
++  lastFiredAt: isoTimestamp.optional(),
++  fireCount: z.number().int().nonnegative(),
++  maxRuns: z.number().int().positive().optional(),
++  lastError: z.string().min(1).optional(),
++}) as unknown as z.ZodType<AutomationRecord>
++
++/** One flat automation table keyed by opaque id. */
++export const automationsDomainSpec = defineDomain({
++  name: 'automations',
++  version: 0,
++  tables: {
++    automations: domainTable<string, AutomationRecord>(automationRecordSchema),
++  },
++})
+diff --git a/packages/schedule/automations/src/types.ts b/packages/schedule/automations/src/types.ts
+new file mode 100644
+index 0000000000..b2f84d669d
+--- /dev/null
++++ b/packages/schedule/automations/src/types.ts
+@@ -0,0 +1,59 @@
++/** Client-safe payloads and durable record shapes for cross-session automations. */
++import type { Branded } from '@deepseek-ai/dsh-brand'
++
++/** Opaque durable identifier of one automation. */
++export type AutomationId = Branded<'AutomationId'>
++
++/**
++ * When an automation fires. `after` and `at` are one-shot; `every` is
++ * fixed-rate recurring, re-armed from the due time so missed occurrences
++ * while the process was down coalesce into one catch-up fire.
++ */
++export type AutomationSchedule =
++  | { readonly kind: 'after'; readonly delaySeconds: number }
++  | { readonly kind: 'at'; readonly at: string }
++  | { readonly kind: 'every'; readonly intervalSeconds: number }
++
++/** One durable automation: a stored prompt replayed into a fresh session on schedule. */
++export interface AutomationRecord {
++  readonly id: AutomationId
++  /** Short human-facing label shown in list output and the spawned session title. */
++  readonly title: string
++  /** The exact user prompt the spawned session receives. */
++  readonly prompt: string
++  readonly schedule: AutomationSchedule
++  /** Absolute workspace path recorded from the creating agent and reused at fire time. */
++  readonly cwd: string
++  /** Preset the spawned session mounts; absent composes the roster default. */
++  readonly agentPreset?: string
++  /** Epoch milliseconds at creation. */
++  readonly createdAt: number
++  /** ISO timestamp of the next (or, for a failed one-shot, the missed) fire. */
++  readonly scheduledAt: string
++  /** ISO timestamp of the last completed fire attempt; absent before the first fire. */
++  readonly lastFiredAt?: string
++  /** Completed fire attempts, successful or not. */
++  readonly fireCount: number
++  /** Fire ceiling for recurring automations; absent when unbounded. */
++  readonly maxRuns?: number
++  /** Last fire failure, kept for inspection; a failed one-shot never re-fires. */
++  readonly lastError?: string
++}
++
++/** The model-facing list row of one automation. */
++export interface AutomationView {
++  readonly id: AutomationId
++  readonly title: string
++  readonly schedule: AutomationSchedule
++  readonly nextRunAt: string
++  readonly fireCount: number
++  readonly maxRuns?: number
++  readonly lastFiredAt?: string
++  readonly lastError?: string
++}
++
++/** The create tool's result. */
++export interface AutomationCreateResult {
++  readonly id: AutomationId
++  readonly nextRunAt: string
++}
+diff --git a/packages/schedule/automations/tests/automations.spec.ts b/packages/schedule/automations/tests/automations.spec.ts
+new file mode 100644
+index 0000000000..f0f1c5590d
+--- /dev/null
++++ b/packages/schedule/automations/tests/automations.spec.ts
+@@ -0,0 +1,387 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
++import { mkdtemp, rm } from 'node:fs/promises'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
++import { Context, Service } from '@deepseek-ai/cordis'
++import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
++import { ToolCallId, type UserMessage } from '@deepseek-ai/dsh-llm'
++import { Session, SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
++import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
++import ToolRuntime from '@deepseek-ai/dsh-tools'
++import Storage from '@deepseek-ai/dsh-storage'
++import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
++import * as StorageJson from '@deepseek-ai/dsh-storage-json'
++import AutomationsService, { spawnAutomationSession } from '../src/index.ts'
++import { isDue, nextRecurringAt, renderAutomationFraming, resolveDueAt, validateAutomationInput } from '../src/domain.ts'
++import type { AutomationRecord } from '../src/types.ts'
++
++const LIMITS = { maxPromptBytes: 1024, minDelaySeconds: 60, minIntervalSeconds: 60 }
++
++beforeEach(() => {
++  // `Date` drives the due arithmetic; the timers own the wake schedule.
++  // Microtasks stay real so Cordis service publication keeps flowing.
++  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
++})
++afterEach(() => { vi.useRealTimers() })
++
++describe('automation domain', () => {
++  it('resolves the first due time for every schedule kind', () => {
++    expect(resolveDueAt({ kind: 'after', delaySeconds: 60 }, 1_000)).toBe(new Date(61_000).toISOString())
++    expect(resolveDueAt({ kind: 'at', at: '2026-01-01T00:00:00.000Z' }, 1_000)).toBe('2026-01-01T00:00:00.000Z')
++    expect(resolveDueAt({ kind: 'every', intervalSeconds: 60 }, 1_000)).toBe(new Date(61_000).toISOString())
++  })
++
++  it('coalesces missed recurring occurrences into the next anchor multiple', () => {
++    const anchor = '2026-01-01T00:00:00.000Z'
++    expect(nextRecurringAt(anchor, 60, Date.parse(anchor) + 30_000)).toBe('2026-01-01T00:01:00.000Z')
++    expect(nextRecurringAt(anchor, 60, Date.parse(anchor) + 61_000)).toBe('2026-01-01T00:02:00.000Z')
++    expect(nextRecurringAt(anchor, 60, Date.parse(anchor) + 3_000_000)).toBe('2026-01-01T00:51:00.000Z')
++  })
++
++  it('skips a failed one-shot but keeps a failed recurring automation due', () => {
++    const base: AutomationRecord = {
++      id: 'a' as AutomationRecord['id'],
++      title: 't', prompt: 'p',
++      schedule: { kind: 'after', delaySeconds: 60 },
++      cwd: '/w',
++      createdAt: 0, scheduledAt: new Date(0).toISOString(),
++      fireCount: 0,
++    }
++    expect(isDue(base, 1)).toBe(true)
++    expect(isDue({ ...base, lastError: 'boom' }, 1)).toBe(false)
++    const recurring = { ...base, schedule: { kind: 'every', intervalSeconds: 60 } as const }
++    expect(isDue({ ...recurring, lastError: 'boom', scheduledAt: new Date(0).toISOString() }, 1)).toBe(true)
++    expect(isDue({ ...recurring, maxRuns: 2, fireCount: 2 }, 1)).toBe(false)
++  })
++
++  it('validates creation input against the deployment limits', () => {
++    expect(() => validateAutomationInput({ title: '', prompt: 'p', schedule: { kind: 'after', delaySeconds: 60 }, maxRuns: undefined }, LIMITS))
++      .toThrow('title must be a non-empty string')
++    expect(() => validateAutomationInput({ title: 't', prompt: 'x'.repeat(2000), schedule: { kind: 'after', delaySeconds: 60 }, maxRuns: undefined }, LIMITS))
++      .toThrow('prompt exceeds')
++    expect(() => validateAutomationInput({ title: 't', prompt: 'p', schedule: { kind: 'after', delaySeconds: 1 }, maxRuns: undefined }, LIMITS))
++      .toThrow('at least 60')
++    expect(() => validateAutomationInput({ title: 't', prompt: 'p', schedule: { kind: 'at', at: 'not-a-date' }, maxRuns: undefined }, LIMITS))
++      .toThrow('ISO-8601')
++    expect(() => validateAutomationInput({ title: 't', prompt: 'p', schedule: { kind: 'every', intervalSeconds: 60 }, maxRuns: 3 }, LIMITS))
++      .not.toThrow()
++    expect(() => validateAutomationInput({ title: 't', prompt: 'p', schedule: { kind: 'after', delaySeconds: 60 }, maxRuns: 3 }, LIMITS))
++      .toThrow('applies only to recurring')
++    expect(() => validateAutomationInput({ title: 't', prompt: 'p', schedule: { kind: 'wat' }, maxRuns: undefined }, LIMITS))
++      .toThrow('schedule.kind')
++  })
++
++  it('frames the fired prompt as scheduled work', () => {
++    const record = { title: 'Sweep logs', scheduledAt: new Date(0).toISOString() } as AutomationRecord
++    expect(renderAutomationFraming(record, 2)).toContain('"Sweep logs"')
++    expect(renderAutomationFraming(record, 2)).toContain('occurrence 2')
++  })
++})
++
++/** Stub `agents` registry: records creations and answers with one canned handle. */
++class StubAgents extends Service {
++  static inject = []
++  readonly createCalls: Array<Record<string, unknown>> = []
++  createFailure: Error | undefined
++  readonly followups: UserMessage[] = []
++  private readonly handle: AgentHandle
++
++  constructor(ctx: Context) {
++    super(ctx, 'agents')
++    const agent = {
++      session: Session.create(SessionId('spawned')),
++      followup: (message: UserMessage) => { this.followups.push(message) },
++    } as unknown as Agent
++    this.handle = { agent, dispose: async () => {} }
++  }
++
++  create(options: Record<string, unknown>): Promise<AgentHandle> {
++    this.createCalls.push(options)
++    const setup = options.setup
++    const promise = typeof setup === 'function'
++      ? Promise.resolve(setup({} as Context)).then(() => this.handle)
++      : Promise.resolve(this.handle)
++    if (this.createFailure !== undefined) return Promise.reject(this.createFailure)
++    return promise
++  }
++}
++
++/** Stub `agentPresets`: resolves any recorded id and reports one mounted preset. */
++class StubPresets extends Service {
++  static inject = []
++  readonly mountedIds: string[] = []
++  resolveFailure: Error | undefined
++
++  constructor(ctx: Context) {
++    super(ctx, 'agentPresets')
++  }
++
++  async resolve(): Promise<{ id: string }> {
++    if (this.resolveFailure !== undefined) throw this.resolveFailure
++    return { id: 'standard' }
++  }
++
++  async standingKeyFor(): Promise<void> {}
++
++  composedPreset(): string | undefined {
++    return undefined
++  }
++
++  async mount(_agentCtx: Context, id: string): Promise<void> {
++    this.mountedIds.push(id)
++  }
++}
++
++describe('the automations service and tools', () => {
++  interface Harness { ctx: Context; root: string; agents: StubAgents; presets: StubPresets; dispose(): Promise<void> }
++
++  const harnesses: Harness[] = []
++
++  async function harness(): Promise<Harness> {
++    const root = await mkdtemp(join(tmpdir(), 'dsh-automations-test-'))
++    const ctx = new Context()
++    try {
++      await ctx.plugin(Storage)
++      await ctx.plugin(StorageJson, { root })
++      await ctx.plugin(StorageDomain, { backend: 'json' })
++      await ctx.plugin(SystemPrompt)
++      await ctx.plugin(ToolRuntime)
++      await ctx.plugin(StubAgents)
++      await ctx.plugin(StubPresets)
++      await ctx.plugin(AutomationsService, LIMITS)
++      const h: Harness = {
++        ctx,
++        root,
++        agents: ctx.get('agents') as unknown as StubAgents,
++        presets: ctx.get('agentPresets') as unknown as StubPresets,
++        async dispose() {
++          await ctx.fiber.dispose()
++          await rm(root, { recursive: true, force: true })
++        },
++      }
++      harnesses.push(h)
++      return h
++    } catch (error: unknown) {
++      await ctx.fiber.dispose()
++      await rm(root, { recursive: true, force: true })
++      throw error
++    }
++  }
++
++  afterEach(async () => {
++    await Promise.all(harnesses.splice(0).map(value => value.dispose()))
++  })
++
++  let callCounter = 0
++  const CALL_IDS = [
++    ToolCallId('c1'), ToolCallId('c2'), ToolCallId('c3'),
++    ToolCallId('c4'), ToolCallId('c5'), ToolCallId('c6'),
++    ToolCallId('c7'), ToolCallId('c8'),
++  ]
++
++  /**
++   * Poll until a condition holds: each attempt advances fake time a step
++   * (driving any lagging re-arm timer) and then lets real event-loop ticks
++   * run, so the fire chain's durable writes settle.
++   */
++  async function until(fn: () => Promise<boolean>, what: string): Promise<void> {
++    for (let attempts = 0; attempts < 200; attempts++) {
++      if (await fn()) return
++      await vi.advanceTimersByTimeAsync(250)
++      await new Promise(resolve => setImmediate(resolve))
++    }
++    throw new Error(`condition not reached: ${what}`)
++  }
++
++  function executeCall(ctx: Context, name: string, args: Record<string, unknown>, agent?: Agent) {
++    const callId = CALL_IDS[callCounter % CALL_IDS.length]!
++    callCounter += 1
++    return ctx.tools.execute({
++      callId,
++      name,
++      arguments: args,
++      signal: new AbortController().signal,
++      ...agent ? { agent } : {},
++    })
++  }
++
++  function stubAgent(cwd = '/tmp/automation-workspace'): Agent {
++    const session = Session.create(SessionId('agent-1'), undefined, {
++      version: SESSION_FORMAT_VERSION, id: SessionId('agent-1'), createdAt: 0, cwd,
++    })
++    return { session } as unknown as Agent
++  }
++
++  function resultText(result: { content: readonly { type: string; text?: string }[] }): string {
++    return result.content.map(block => block.text ?? '').join('\n')
++  }
++
++  it('registers the three automation tools', async () => {
++    const value = await harness()
++    const names = value.ctx.tools.schemas().map(tool => tool.name)
++    expect(names).toEqual(expect.arrayContaining(['automation_create', 'automation_list', 'automation_cancel']))
++  })
++
++  it('creates, lists, and cancels an automation through the tools', async () => {
++    const value = await harness()
++    const agent = stubAgent()
++
++    const created = await executeCall(value.ctx, 'automation_create', {
++      title: 'Sweep logs', prompt: 'sweep the logs', kind: 'after', delay_seconds: 120,
++    }, agent)
++    expect(created.isError).toBe(false)
++
++    const listed = await executeCall(value.ctx, 'automation_list', {}, agent)
++    const text = resultText(listed)
++    expect(text).toContain('"Sweep logs"')
++    expect(text).toMatch(/[0-9a-f-]{36}/)
++
++    const cancelled = await executeCall(value.ctx, 'automation_cancel', { id: /[0-9a-f-]{36}/.exec(text)![0] }, agent)
++    expect(cancelled.isError).toBe(false)
++    const empty = await executeCall(value.ctx, 'automation_list', {}, agent)
++    expect(resultText(empty)).toContain('no scheduled automations')
++
++    const unknown = await executeCall(value.ctx, 'automation_cancel', { id: 'ffffffff-ffff-ffff-ffff-ffffffffffff' }, agent)
++    expect(unknown.isError).toBe(true)
++    expect(resultText(unknown)).toContain('no automation with id')
++  })
++
++  it('anchors the recorded preset and rejects bad input and agentless calls', async () => {
++    const value = await harness()
++    const agent = stubAgent()
++
++    const agentless = await executeCall(value.ctx, 'automation_create', {
++      title: 't', prompt: 'p', kind: 'after', delay_seconds: 60,
++    })
++    expect(agentless.isError).toBe(true)
++    expect(resultText(agentless)).toContain('requires a calling agent')
++
++    const bad = await executeCall(value.ctx, 'automation_create', {
++      title: 't', prompt: 'p', kind: 'after', delay_seconds: 1,
++    }, agent)
++    expect(bad.isError).toBe(true)
++    expect(resultText(bad)).toContain('at least 60')
++
++    const ok = await executeCall(value.ctx, 'automation_create', {
++      title: 't', prompt: 'p', kind: 'after', delay_seconds: 60,
++    }, agent)
++    expect(ok.isError).toBe(false)
++  })
++
++  it('fires a due one-shot into a fresh session and removes the record', async () => {
++    const value = await harness()
++    const agent = stubAgent()
++
++    const created = await executeCall(value.ctx, 'automation_create', {
++      title: 'Nightly sweep', prompt: 'sweep everything', kind: 'after', delay_seconds: 60,
++    }, agent)
++    expect(created.isError).toBe(false)
++
++    await vi.advanceTimersByTimeAsync(61_000)
++    expect(value.agents.createCalls).toHaveLength(1)
++    const options = value.agents.createCalls[0]!
++    expect((options.meta as { cwd?: string }).cwd).toBe('/tmp/automation-workspace')
++    expect((options.meta as { agentPreset?: string }).agentPreset).toBe('standard')
++    expect(value.presets.mountedIds).toEqual(['standard'])
++    expect(value.agents.followups).toHaveLength(1)
++    const message = value.agents.followups[0]!
++    const text = message.content.map(block => block.type === 'text' ? block.text : '').join('')
++    expect(text).toContain('"Nightly sweep"')
++    expect(text).toContain('sweep everything')
++
++    await until(async () => resultText(await executeCall(value.ctx, 'automation_list', {}, agent))
++      .includes('no scheduled automations'), 'one-shot record consumed after fire')
++
++    const listed = await executeCall(value.ctx, 'automation_list', {}, agent)
++    expect(resultText(listed)).toContain('no scheduled automations')
++  })
++
++  it('keeps a recurring automation alive with a coalesced next fire, honoring maxRuns', async () => {
++    const value = await harness()
++    const agent = stubAgent()
++
++    await executeCall(value.ctx, 'automation_create', {
++      title: 'Tick', prompt: 'do the tick', kind: 'every', interval_seconds: 60, max_runs: 2,
++    }, agent)
++
++    await vi.advanceTimersByTimeAsync(61_000)
++    await until(() => Promise.resolve(value.agents.createCalls.length === 1), 'first recurring fire')
++
++    await vi.advanceTimersByTimeAsync(60_000)
++    await until(() => Promise.resolve(value.agents.createCalls.length === 2), 'second recurring fire')
++
++    await vi.advanceTimersByTimeAsync(120_000)
++    await until(() => Promise.resolve(value.agents.createCalls.length === 2), 'maxRuns ceiling holds')
++    await until(async () => resultText(await executeCall(value.ctx, 'automation_list', {}, agent))
++      .includes('no scheduled automations'), 'exhausted record consumed')
++  })
++
++  it('records the failure of a one-shot and never re-fires it', async () => {
++    const value = await harness()
++    value.agents.createFailure = new Error('no route')
++    const agent = stubAgent()
++
++    await executeCall(value.ctx, 'automation_create', {
++      title: 'Doomed', prompt: 'this will fail', kind: 'after', delay_seconds: 60,
++    }, agent)
++
++    await vi.advanceTimersByTimeAsync(61_000)
++    await until(() => Promise.resolve(value.agents.createCalls.length === 1), 'doomed fire attempted')
++    await until(async () => resultText(await executeCall(value.ctx, 'automation_list', {}, agent))
++      .includes('no route'), 'failed fire recorded on the list')
++
++    expect(value.agents.createCalls).toHaveLength(1)
++
++    await vi.advanceTimersByTimeAsync(600_000)
++    await until(() => Promise.resolve(value.agents.createCalls.length === 1), 'failed one-shot never re-fires')
++
++    const listed = await executeCall(value.ctx, 'automation_list', {}, agent)
++    const text = resultText(listed)
++    expect(text).toContain('"Doomed"')
++    expect(text).toContain('no route')
++  })
++
++  it('spawns the session through the recorded preset with a framed prompt', async () => {
++    const ctx = new Context()
++    const createCalls: Array<Record<string, unknown>> = []
++    const followups: UserMessage[] = []
++    const fakeCtx = {
++      get: (key: string) => {
++        if (key === 'agents') {
++          return {
++            create: async (options: Record<string, unknown>) => {
++              createCalls.push(options)
++              return {
++                agent: {
++                  session: Session.create(SessionId('spawned')),
++                  followup: (message: UserMessage) => { followups.push(message) },
++                },
++                dispose: async () => {},
++              }
++            },
++          }
++        }
++        if (key === 'agentPresets') {
++          return {
++            resolve: async () => ({ id: 'standard' }),
++            standingKeyFor: async () => {},
++            mount: async (_agentCtx: Context, id: string) => { void id },
++          }
++        }
++        return undefined
++      },
++    } as unknown as Context
++    const record: AutomationRecord = {
++      id: 'a' as AutomationRecord['id'],
++      title: 'Manual', prompt: 'do it',
++      schedule: { kind: 'after', delaySeconds: 60 },
++      cwd: '/tmp/w', agentPreset: 'standard',
++      createdAt: 0, scheduledAt: new Date(0).toISOString(),
++      fireCount: 0,
++    }
++    await spawnAutomationSession(fakeCtx, record, 1, new AbortController().signal)
++    expect(createCalls).toHaveLength(1)
++    expect(followups).toHaveLength(1)
++    void ctx
++  })
++})
+diff --git a/packages/schedule/automations/tsconfig.json b/packages/schedule/automations/tsconfig.json
+new file mode 100644
+index 0000000000..dab768474b
+--- /dev/null
++++ b/packages/schedule/automations/tsconfig.json
+@@ -0,0 +1,45 @@
++{
++  "extends": "../../../tsconfig.base.json",
++  "compilerOptions": {
++    "rootDir": "src",
++    "outDir": "lib/types"
++  },
++  "include": [
++    "src"
++  ],
++  "references": [
++    {
++      "path": "../../../vendor/cosmokit"
++    },
++    {
++      "path": "../../../vendor/cordis"
++    },
++    {
++      "path": "../../core/tools"
++    },
++    {
++      "path": "../../core/agent"
++    },
++    {
++      "path": "../../core/session"
++    },
++    {
++      "path": "../../preset/agent-presets"
++    },
++    {
++      "path": "../../session/session-title"
++    },
++    {
++      "path": "../../storage/storage"
++    },
++    {
++      "path": "../../storage/storage-domain"
++    },
++    {
++      "path": "../../util/brand"
++    },
++    {
++      "path": "../../workspace/workspace"
++    }
++  ]
++}
+-- 
+2.43.0
+

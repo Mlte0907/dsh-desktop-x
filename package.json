@@ -1,0 +1,25 @@
+{
+  "name": "dsh-xuanyuan-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Codex-style desktop shell for `dsh web`: instant window, tray-resident, backend survives frontend exit",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/build-icons.mjs && node scripts/copy-assets.mjs",
+    "icons": "node scripts/build-icons.mjs",
+    "start": "npm run build && electron .",
+    "launch": "electron .",
+    "background": "DSH_BACKGROUND_MODE=1 npm run launch",
+    "install-system": "bash scripts/install-system.sh",
+    "uninstall-system": "bash scripts/install-system.sh --uninstall"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^44.1.0",
+    "sharp": "^0.34.4",
+    "typescript": "^5.7.0"
+  },
+  "allowScripts": {
+    "sharp@0.34.5": true
+  }
+}

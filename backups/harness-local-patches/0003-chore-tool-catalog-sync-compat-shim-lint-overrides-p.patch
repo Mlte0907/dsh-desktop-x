@@ -1,0 +1,1172 @@
+From b71de2cb4795dbed5050e65c6098492622978d89 Mon Sep 17 00:00:00 2001
+From: xiaoxin <xiaoxin@deepseek-harness.local>
+Date: Mon, 31 Aug 2026 16:08:02 +0800
+Subject: [PATCH 3/6] chore: tool-catalog sync, compat-shim lint overrides,
+ plan-mode tests, configs
+
+- Update tool-catalog docs for new packages
+- Add oxlint override for packages/compat/** (unsafe-any, untyped bridge)
+- Plan-mode: add integration + unit tests, update imports
+- Agent presets shipped-root test updated for autonomous preset
+- tsconfig / pnpm-lock sync for new packages
+---
+ ...-08-31-cross-session-automations.i18n.yaml |   6 +
+ .../2026-08-31-cross-session-automations.md   |  28 ++++
+ ...2026-08-31-cross-session-automations.zh.md |  28 ++++
+ ...-model-initiated-plan-mode-entry.i18n.yaml |   6 +
+ ...6-08-31-model-initiated-plan-mode-entry.md |  30 ++++
+ ...8-31-model-initiated-plan-mode-entry.zh.md |  30 ++++
+ .oxlintrc.json                                |  15 ++
+ apps/cli/package.json                         |  44 +++---
+ docs/tool-catalog.md                          | 129 ++++++++++++++++++
+ packages/bundle/base/cordis.patch.yml         |  12 ++
+ packages/bundle/base/package.json             |   2 +
+ .../ui-agent-preset/src/client/locales.ts     |  76 +++++++++--
+ packages/client/web/src/seed.ts               |   5 +-
+ packages/plan/plan-mode/src/index.ts          |  12 +-
+ .../plan/plan-mode/tests/integration.spec.ts  |   4 +-
+ .../plan/plan-mode/tests/plan-mode.spec.ts    |   8 +-
+ .../agent-presets/tests/shipped-root.spec.ts  |  50 +------
+ pnpm-lock.yaml                                |  88 ++++++++++++
+ scripts/gen-tool-catalog.ts                   |  36 +++++
+ .../verify-package-readme-model-experience.ts |  11 +-
+ tsconfig.base.json                            |   3 +
+ tsconfig.host.json                            |   2 +
+ 22 files changed, 529 insertions(+), 96 deletions(-)
+ create mode 100644 .agents/notes/implemented/feature/2026-08-31-cross-session-automations.i18n.yaml
+ create mode 100644 .agents/notes/implemented/feature/2026-08-31-cross-session-automations.md
+ create mode 100644 .agents/notes/implemented/feature/2026-08-31-cross-session-automations.zh.md
+ create mode 100644 .agents/notes/implemented/feature/2026-08-31-model-initiated-plan-mode-entry.i18n.yaml
+ create mode 100644 .agents/notes/implemented/feature/2026-08-31-model-initiated-plan-mode-entry.md
+ create mode 100644 .agents/notes/implemented/feature/2026-08-31-model-initiated-plan-mode-entry.zh.md
+
+diff --git a/.agents/notes/implemented/feature/2026-08-31-cross-session-automations.i18n.yaml b/.agents/notes/implemented/feature/2026-08-31-cross-session-automations.i18n.yaml
+new file mode 100644
+index 0000000000..569537c0b1
+--- /dev/null
++++ b/.agents/notes/implemented/feature/2026-08-31-cross-session-automations.i18n.yaml
+@@ -0,0 +1,6 @@
++# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
++# side as of the last confirmed-consistent state. Both languages carry equal authority;
++# after editing either side, bring the other along and re-record with:
++#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-31-cross-session-automations.md
++2026-08-31-cross-session-automations.md: 029aa0756318d1a1eeec856f39fa6fda6864146f
++2026-08-31-cross-session-automations.zh.md: d43b1c71a803567822bae7b5db5059fe343e87e9
+diff --git a/.agents/notes/implemented/feature/2026-08-31-cross-session-automations.md b/.agents/notes/implemented/feature/2026-08-31-cross-session-automations.md
+new file mode 100644
+index 0000000000..029aa07563
+--- /dev/null
++++ b/.agents/notes/implemented/feature/2026-08-31-cross-session-automations.md
+@@ -0,0 +1,28 @@
++# Agent Note: Cross-session automations and the spawn seam
++
++Status: implemented
++
++English | [中文](2026-08-31-cross-session-automations.zh.md)
++
++## Problem
++
++The harness had exactly one scheduling capability, `dsh-schedule`, and it is session-local by design: reminders are folded from the owning session's event log and delivered back into that same conversation. A deployment that wanted "every night at 02:00, sweep the logs" had no answer — the work had to happen inside some live conversation, and nothing survived that conversation's end. ZCode-shaped agents (the `autonomous` preset) also had no way to hand future work to the harness: a stored prompt that opens its own session is the smallest unit of unattended operation.
++
++## Decision
++
++`@deepseek-ai/dsh-automations` adds cross-session automations as a host-plane service: durable records in a new `automations` storage domain, three model-facing tools (`automation_create`, `automation_list`, `automation_cancel`), and one re-armed process-level driver. Key choices:
++
++1. **Host plane, not a preset.** Automations must outlive every session and be a process singleton, like the subagent registry. The tools register on the host tool layer, so every preset sees them; the plane-separation check holds because no preset mounts the row.
++2. **The session-creation seam is `ctx.agents.create`, not a new mechanism.** Firing mirrors `createWebhookSession` — preset resolve/standing-key/mount, workspace attach, title, `followup` of the framed prompt — with every spawn-time service resolved at fire time and failing loud there. Registration needs none of them, and headless compositions that can never spawn fail on their first due record instead of at load.
++3. **Missed occurrences coalesce.** The driver never replays a backlog: a recurring record re-arms from its anchor (`nextRecurringAt` picks the first anchor multiple strictly after now), and one-shot records that failed keep their `lastError` and never re-fire. This keeps a down host from producing a burst of stale sessions at boot.
++4. **The spawn seam is optional-aware.** `workspaceRegistry` and `sessionTitle` refine the fired session (attach, rename) but are absent in headless compositions; the session remains file-backed by its recorded cwd without them.
++
++## Alternatives
++
++- **Session-log persistence (the `dsh-schedule` shape)** would tie automations to one session's lifecycle — the exact constraint being removed.
++- **A workflow/worker composition** could run scheduled work in-process, but it neither survives restarts nor opens a fresh context per fire; automation fires should see the workspace as it is NOW, not as the scheduling conversation left it.
++
++## Verification
++
++- `packages/schedule/automations/tests/automations.spec.ts` drives the real service over the real storage stack: domain arithmetic and validation as pure units; create/list/cancel through the tool pipeline; a due one-shot fired into a stub `agents` registry with cwd, preset mount, and framed prompt asserted; recurring coalescing and the `maxRuns` ceiling; a failed one-shot retained with its `lastError` and never re-fired.
++- The base bundle mounts the service with explicit bounds; `verify-cordis-config` plane separation holds.
+diff --git a/.agents/notes/implemented/feature/2026-08-31-cross-session-automations.zh.md b/.agents/notes/implemented/feature/2026-08-31-cross-session-automations.zh.md
+new file mode 100644
+index 0000000000..d43b1c71a8
+--- /dev/null
++++ b/.agents/notes/implemented/feature/2026-08-31-cross-session-automations.zh.md
+@@ -0,0 +1,28 @@
++# Agent Note：跨会话自动化与拉起接缝
++
++Status: implemented
++
++[English](2026-08-31-cross-session-automations.md) | 中文
++
++## Problem
++
++harness 只有一种调度能力——`dsh-schedule`——而且它按设计是会话本地的：提醒从所属会话的事件日志折叠，再送回同一场对话。想要"每晚 02:00 清扫日志"的部署没有答案——工作必须发生在某场活跃对话里，而对话结束之后什么都不复存在。ZCode 形态的 Agent（`autonomous` 预设）也因此无法把未来的工作托付给 harness：一条能打开自己会话的存储提示词，正是无人值守操作的最小单元。
++
++## Decision
++
++`@deepseek-ai/dsh-automations` 以宿主面服务的形态增加跨会话自动化：新的 `automations` 存储域中的持久记录、三个模型侧工具（`automation_create`、`automation_list`、`automation_cancel`），以及一个不断重设的进程级驱动器。关键选择：
++
++1. **宿主面，而非预设。** 自动化必须活得比任何会话长，并且是进程单例——与子代理注册表同理。工具注册在宿主工具层，每个预设都能看到；由于没有预设挂载该行，平面分离检查依然成立。
++2. **会话创建接缝就是 `ctx.agents.create`，不造新机制。** 触发镜像 `createWebhookSession`——预设 resolve/standing-key/mount、工作区附加、标题、带框架文字的 `followup`——每个触发期服务都在触发时解析并在彼时报错。注册不需要它们，永远无法拉起会话的无头组装会在第一条到期记录上失败，而不是在加载时。
++3. **错过的触发合并。** 驱动器从不重放积压：循环记录从锚点重设（`nextRecurringAt` 选取严格晚于当前的第一个锚点倍数），失败的一次性记录保留 `lastError` 且不再触发。这让宕机的主机在启动时不会喷出一批过时会话。
++4. **拉起接缝是可选感知的。** `workspaceRegistry` 与 `sessionTitle` 精修被触发的会话（附加、改名），但在无头组装中缺席；没有它们，会话仍以记录的 cwd 作为文件后盾。
++
++## Alternatives
++
++- **会话日志持久化（`dsh-schedule` 的形态）** 会把自动化绑在单个会话的生命周期上——这正是要移除的约束。
++- **workflow/worker 组装** 可以在进程内运行定时工作，但它既不能在重启后存活，也不会为每次触发开出全新上下文；自动化触发看到的应当是工作区**现在**的样子，而不是调度对话离开时的样子。
++
++## Verification
++
++- `packages/schedule/automations/tests/automations.spec.ts` 在真实存储栈上驱动真实服务：域算术与校验作为纯单元；create/list/cancel 走工具管道；到期一次性触发进桩 `agents` 注册表，断言 cwd、预设挂载与框架提示词；循环合并与 `maxRuns` 上限；失败的一次性保留 `lastError` 且不再触发。
++- base bundle 以显式上限挂载该服务；`verify-cordis-config` 平面分离成立。
+diff --git a/.agents/notes/implemented/feature/2026-08-31-model-initiated-plan-mode-entry.i18n.yaml b/.agents/notes/implemented/feature/2026-08-31-model-initiated-plan-mode-entry.i18n.yaml
+new file mode 100644
+index 0000000000..fef302f75c
+--- /dev/null
++++ b/.agents/notes/implemented/feature/2026-08-31-model-initiated-plan-mode-entry.i18n.yaml
+@@ -0,0 +1,6 @@
++# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
++# side as of the last confirmed-consistent state. Both languages carry equal authority;
++# after editing either side, bring the other along and re-record with:
++#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-31-model-initiated-plan-mode-entry.md
++2026-08-31-model-initiated-plan-mode-entry.md: 5eef4ec71daefb3691d2683c6284c69ccb3b2c58
++2026-08-31-model-initiated-plan-mode-entry.zh.md: cd571dd97a51d6c76cadcefac98d7ddce5b868c1
+diff --git a/.agents/notes/implemented/feature/2026-08-31-model-initiated-plan-mode-entry.md b/.agents/notes/implemented/feature/2026-08-31-model-initiated-plan-mode-entry.md
+new file mode 100644
+index 0000000000..5eef4ec71d
+--- /dev/null
++++ b/.agents/notes/implemented/feature/2026-08-31-model-initiated-plan-mode-entry.md
+@@ -0,0 +1,30 @@
++# Agent Note: Model-initiated plan mode entry
++
++Status: implemented
++
++English | [中文](2026-08-31-model-initiated-plan-mode-entry.zh.md)
++
++## Problem
++
++Plan mode was the one collaboration state an autonomous agent could not reach by itself. The `/plan` command is a user surface, `exit_plan_mode` only leaves, and the controller's public `set(agent, active)` had no model-facing caller — so a preset tuned for unattended work (the `autonomous` agent preset) could tell the model to "plan before non-trivial work" but could not give the switch a hard form: the model either implemented unapproved or asked for approval in prose, where a conversational "sounds good" approves nothing and gates nothing.
++
++## Decision
++
++`@deepseek-ai/dsh-tool-plan-mode` adds one tool, `enter_plan_mode`, that forwards the model's intent to `ctx.planMode.set(agent, true)` and reports the outcome. The tool owns no state: plan mode stays logged per-agent by `dsh-plan-mode`, queued selections still land at the next accepted pre-step, and `/plan off` still cancels or leaves. The tool requires the controller through its `inject` list, so a composition without `dsh-plan-mode` fails at load.
++
++Three consequences were accepted deliberately:
++
++1. **Entry is unreviewed; exit is not.** The tool mirrors `/plan`: switching into plan mode commits (or queues) without a consent round-trip. The safety property is that plan mode only ever restricts the agent, and leaving still runs the user review. A consent-gated entry would need the approval-policy seam, which this package does not own.
++2. **The mode-change narration became source-neutral** ("Plan mode is now active" / "Plan mode is now inactive"). The old text ("The user switched this session to plan mode") is false when the model enters through the tool, and model-visible text must be faithful. The narration's only job is to tell the model the fact; the UI observes committed flips through `session/event` either way.
++3. **`enter_plan_mode` joins the always-registered catalog.** Like `exit_plan_mode`, it stays registered while inactive, so entering or leaving plan mode changes no tool schemas — only the `plan:policy` section appears or disappears. `dsh-plan-mode`'s own JSDoc already stated this property for its exit tool; the entry tool preserves it.
++
++## Alternatives
++
++- **Doctrine only**: the `autonomous` preset could instruct the model to present a plan through prose and `ask_user_question` before implementing. Rejected: a prose approval has no gate, no durable logged state, and no review surface; it approximates the UX without the invariant.
++- **Teach the loop a new transition**: moving entry into `agent-loop` or the controller itself would change the loop contract for one tool's worth of behavior; the harness rule is plugins, not loop changes.
++
++## Verification
++
++- `packages/plan/tool-plan-mode/tests/tool-plan-mode.spec.ts` drives the real tool against the real controller: commit between turns, queue inside an open turn, reject while active, idempotent re-entry, and the missing-agent error.
++- `packages/plan/plan-mode` narration assertions were updated to the neutral strings; the plan-mode suite otherwise passes unchanged.
++- The `autonomous` preset mounts the tool inside its `planning` group so the injected `planMode` resolves to the preset's own realm-local controller.
+diff --git a/.agents/notes/implemented/feature/2026-08-31-model-initiated-plan-mode-entry.zh.md b/.agents/notes/implemented/feature/2026-08-31-model-initiated-plan-mode-entry.zh.md
+new file mode 100644
+index 0000000000..cd571dd97a
+--- /dev/null
++++ b/.agents/notes/implemented/feature/2026-08-31-model-initiated-plan-mode-entry.zh.md
+@@ -0,0 +1,30 @@
++# Agent Note：模型发起的计划模式进入
++
++Status: implemented
++
++[English](2026-08-31-model-initiated-plan-mode-entry.md) | 中文
++
++## Problem
++
++计划模式是自主 Agent 唯一无法自己到达的协作状态。`/plan` 命令是用户面，`exit_plan_mode` 只负责退出，控制器的公开方法 `set(agent, active)` 没有任何模型侧调用方——于是一个为无人值守调校的预设（`autonomous` agent preset）只能告诉模型"非平凡工作先计划"，却给不出这个开关的硬形态：模型要么未经批准就直接实现，要么用散文请求批准，而对话里一句"听起来不错"什么也不批准、什么也不闸住。
++
++## Decision
++
++`@deepseek-ai/dsh-tool-plan-mode` 增加一个工具 `enter_plan_mode`，把模型的意图转发给 `ctx.planMode.set(agent, true)` 并报告结果。工具不持有任何状态：计划模式仍由 `dsh-plan-mode` 按会话记录，排队选择仍在下一个被接受的 pre-step 落地，`/plan off` 仍可取消或退出。工具通过 inject 列表要求控制器，没有 `dsh-plan-mode` 的组装会在加载时报错。
++
++三个后果是有意接受的：
++
++1. **进入不评审；退出要评审。** 工具与 `/plan` 一致：切入计划模式不经同意往返直接提交（或排队）。安全属性在于计划模式只会收紧 Agent 的行动，而且退出仍走用户评审。带同意门控的进入需要审批策略面，本包不持有它。
++2. **模式切换叙事改为来源中性**（"Plan mode is now active" / "Plan mode is now inactive"）。旧文案（"The user switched this session to plan mode"）在模型通过工具进入时是假的，而模型可见文字必须忠实。叙事的唯一职责是告诉模型这个事实；UI 无论哪种来源都通过 `session/event` 观察已提交的翻转。
++3. **`enter_plan_mode` 加入常驻工具目录。** 与 `exit_plan_mode` 一样，它在未激活时也保持注册，因此进出计划模式不改变任何工具 schema——只有 `plan:policy` 小节出现或消失。`dsh-plan-mode` 自己的 JSDoc 已为其退出工具声明了这个性质；进入工具延续它。
++
++## Alternatives
++
++- **只靠准则**：`autonomous` 预设可以指示模型先用散文和 `ask_user_question` 提出计划再实现。已否决：散文式批准没有闸门、没有持久化的记录状态、没有评审面；它只近似了体验，没有不变量。
++- **教循环一个新转换**：把进入逻辑放进 `agent-loop` 或控制器本身，会为一个工具的行为改变循环契约；仓库规则是加插件，不改循环。
++
++## Verification
++
++- `packages/plan/tool-plan-mode/tests/tool-plan-mode.spec.ts` 用真实控制器驱动真实工具：轮间提交、轮内排队、激活时拒绝、重复进入幂等、缺 Agent 报错。
++- `packages/plan/plan-mode` 的叙事断言已更新为中性文案；plan-mode 测试套件其余部分原样通过。
++- `autonomous` 预设把工具挂在其 `planning` 组内，注入的 `planMode` 解析到该预设自己 realm 内的控制器。
+diff --git a/.oxlintrc.json b/.oxlintrc.json
+index 1f11a9e989..0da4beb65a 100644
+--- a/.oxlintrc.json
++++ b/.oxlintrc.json
+@@ -195,6 +195,21 @@
+         "typescript"
+       ]
+     },
++    {
++      "files": [
++        "packages/compat/**/*.{ts,tsx}"
++      ],
++      "rules": {
++        "typescript/ban-ts-comment": "off", // The shim bridges legacy plugins whose contracts are untyped by nature.
++        "typescript/no-unsafe-assignment": "off", // Legacy bridge: request/response shapes are typed incrementally as each old plugin migrates off.
++        "typescript/no-unsafe-call": "off",
++        "typescript/no-unsafe-member-access": "off",
++        "typescript/require-await": "off"
++      },
++      "plugins": [
++        "typescript"
++      ]
++    },
+     {
+       "files": [
+         "packages/*/*/tests/**/*.{ts,tsx}",
+diff --git a/apps/cli/package.json b/apps/cli/package.json
+index 9a17e1dcfb..18831a5ab2 100644
+--- a/apps/cli/package.json
++++ b/apps/cli/package.json
+@@ -19,74 +19,70 @@
+   ],
+   "dsh": {
+     "configTrees": [
+-      {
+-        "mount": "config/agent-presets",
+-        "path": "../../packages/preset/agent-presets/presets",
+-        "scanRoster": true
+-      }
++      { "mount": "config/agent-presets", "path": "../../packages/preset/agent-presets/presets", "scanRoster": true }
+     ]
+   },
+   "license": "MIT",
+   "dependencies": {
+-    "@deepseek-ai/cordis": "workspace:^",
+     "@deepseek-ai/cordis-plugin-hmr": "workspace:^",
+     "@deepseek-ai/cordis-plugin-include": "workspace:^",
+     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+     "@deepseek-ai/cordis-plugin-timer": "workspace:^",
+     "@deepseek-ai/dsh-acp-app": "workspace:^",
+-    "@deepseek-ai/dsh-agent-instructions": "workspace:^",
+     "@deepseek-ai/dsh-agent-tool-presentation": "workspace:^",
+     "@deepseek-ai/dsh-app-boot": "workspace:^",
+     "@deepseek-ai/dsh-base": "workspace:^",
++    "@deepseek-ai/dsh-cordis-client-runner": "workspace:^",
+     "@deepseek-ai/dsh-client-ui-agent-preset": "workspace:^",
+     "@deepseek-ai/dsh-client-ui-cordis": "workspace:^",
+-    "@deepseek-ai/dsh-cmdline": "workspace:^",
+     "@deepseek-ai/dsh-command-compact": "workspace:^",
+     "@deepseek-ai/dsh-command-goal": "workspace:^",
+     "@deepseek-ai/dsh-compaction-basic": "workspace:^",
+     "@deepseek-ai/dsh-compaction-tool-result-pruner": "workspace:^",
+-    "@deepseek-ai/dsh-cordis-client-runner": "workspace:^",
+-    "@deepseek-ai/dsh-fs-local": "workspace:^",
+     "@deepseek-ai/dsh-goal": "workspace:^",
+     "@deepseek-ai/dsh-goal-round-driver": "workspace:^",
++    "@deepseek-ai/dsh-cmdline": "workspace:^",
++    "@deepseek-ai/dsh-launch-environment": "workspace:^",
++    "@deepseek-ai/dsh-fs-local": "workspace:^",
+     "@deepseek-ai/dsh-headless": "workspace:^",
++    "@deepseek-ai/dsh-mcp-client": "workspace:^",
+     "@deepseek-ai/dsh-home-paths": "workspace:^",
+     "@deepseek-ai/dsh-hooks-claude-code": "workspace:^",
+     "@deepseek-ai/dsh-hooks-codex": "workspace:^",
+-    "@deepseek-ai/dsh-jobs-local": "workspace:^",
+-    "@deepseek-ai/dsh-launch-environment": "workspace:^",
+-    "@deepseek-ai/dsh-mcp-client": "workspace:^",
+     "@deepseek-ai/dsh-persona": "workspace:^",
+     "@deepseek-ai/dsh-plan-mode": "workspace:^",
++    "@deepseek-ai/dsh-tool-plan-mode": "workspace:^",
++    "@deepseek-ai/dsh-automations": "workspace:^",
++    "@deepseek-ai/dsh-terminal": "workspace:^",
++    "@deepseek-ai/dsh-terminal-bash": "workspace:^",
+     "@deepseek-ai/dsh-pwsh-local": "workspace:^",
+     "@deepseek-ai/dsh-pwsh-sandbox": "workspace:^",
+-    "@deepseek-ai/dsh-schedule": "workspace:^",
+-    "@deepseek-ai/dsh-sdk-app": "workspace:^",
+-    "@deepseek-ai/dsh-sdk-minimal": "workspace:^",
+     "@deepseek-ai/dsh-session-projection": "workspace:^",
+     "@deepseek-ai/dsh-session-reference": "workspace:^",
++    "@deepseek-ai/dsh-sdk-app": "workspace:^",
++    "@deepseek-ai/dsh-sdk-minimal": "workspace:^",
++    "@deepseek-ai/dsh-time-context": "workspace:^",
+     "@deepseek-ai/dsh-skill": "workspace:^",
+     "@deepseek-ai/dsh-skill-filesystem": "workspace:^",
+-    "@deepseek-ai/dsh-terminal": "workspace:^",
+-    "@deepseek-ai/dsh-terminal-bash": "workspace:^",
+-    "@deepseek-ai/dsh-time-context": "workspace:^",
++    "@deepseek-ai/dsh-jobs-local": "workspace:^",
+     "@deepseek-ai/dsh-tmux-context": "workspace:^",
+     "@deepseek-ai/dsh-token-meter": "workspace:^",
+     "@deepseek-ai/dsh-tool-ask-user": "workspace:^",
+     "@deepseek-ai/dsh-tool-bash": "workspace:^",
+     "@deepseek-ai/dsh-tool-bash-persistent": "workspace:^",
++    "@deepseek-ai/dsh-tool-pwsh-persistent": "workspace:^",
+     "@deepseek-ai/dsh-tool-cordis": "workspace:^",
+     "@deepseek-ai/dsh-tool-fs": "workspace:^",
+     "@deepseek-ai/dsh-tool-fs-search": "workspace:^",
+     "@deepseek-ai/dsh-tool-goal": "workspace:^",
+-    "@deepseek-ai/dsh-tool-jobs": "workspace:^",
+     "@deepseek-ai/dsh-tool-pwsh": "workspace:^",
+-    "@deepseek-ai/dsh-tool-pwsh-persistent": "workspace:^",
+     "@deepseek-ai/dsh-tool-ralph": "workspace:^",
++    "@deepseek-ai/dsh-schedule": "workspace:^",
+     "@deepseek-ai/dsh-tool-skill": "workspace:^",
+     "@deepseek-ai/dsh-tool-str-replace-editor": "workspace:^",
+     "@deepseek-ai/dsh-tool-subagent": "workspace:^",
+     "@deepseek-ai/dsh-tool-subagent-control": "workspace:^",
++    "@deepseek-ai/dsh-tool-jobs": "workspace:^",
+     "@deepseek-ai/dsh-tool-todo": "workspace:^",
+     "@deepseek-ai/dsh-tool-web": "workspace:^",
+     "@deepseek-ai/dsh-tool-workflow": "workspace:^",
+@@ -94,8 +90,10 @@
+     "@deepseek-ai/dsh-webhook": "workspace:^",
+     "@deepseek-ai/dsh-webhook-github": "workspace:^",
+     "@deepseek-ai/dsh-workflow-worker-thread": "workspace:^",
++    "@deepseek-ai/dsh-agent-instructions": "workspace:^",
+     "@deepseek-ai/schemastery": "workspace:^",
+     "commander": "^15.0.0",
++    "@deepseek-ai/cordis": "workspace:^",
+     "js-yaml": "^4.2.0",
+     "node-addon-require-builtin": "^0.1.4"
+   },
+@@ -103,13 +101,13 @@
+     "@agentclientprotocol/sdk": "1.4.0",
+     "@deepseek-ai/dsh-acp": "workspace:^",
+     "@deepseek-ai/dsh-agent": "workspace:^",
++    "@deepseek-ai/dsh-agent-spine-demo": "workspace:^",
+     "@deepseek-ai/dsh-attachment-local": "workspace:^",
+     "@deepseek-ai/dsh-bash-local": "workspace:^",
+     "@deepseek-ai/dsh-credentials-local": "workspace:^",
+     "@deepseek-ai/dsh-deepseek-llm-api-extensions": "workspace:^",
+     "@deepseek-ai/dsh-experimental-agent-team": "workspace:^",
+     "@deepseek-ai/dsh-experimental-agent-team-profile": "workspace:^",
+-    "@deepseek-ai/dsh-experimental-code-runtime-python": "workspace:^",
+     "@deepseek-ai/dsh-experimental-tool-agent-team": "workspace:^",
+     "@deepseek-ai/dsh-fs-observation-policy": "workspace:^",
+     "@deepseek-ai/dsh-fs-sandbox": "workspace:^",
+@@ -129,7 +127,6 @@
+     "@deepseek-ai/dsh-session-log-deepseek": "workspace:^",
+     "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:^",
+     "@deepseek-ai/dsh-session-query": "workspace:^",
+-    "@deepseek-ai/dsh-shell-env": "workspace:^",
+     "@deepseek-ai/dsh-settings": "workspace:^",
+     "@deepseek-ai/dsh-settings-file": "workspace:^",
+     "@deepseek-ai/dsh-subagent": "workspace:^",
+@@ -138,6 +135,7 @@
+     "@deepseek-ai/dsh-subprocess-local": "workspace:^",
+     "@deepseek-ai/dsh-system-prompt": "workspace:^",
+     "@deepseek-ai/dsh-tools": "workspace:^",
++    "@deepseek-ai/dsh-tool-subagent-report": "workspace:^",
+     "@deepseek-ai/dsh-user-approval": "workspace:^",
+     "@types/js-yaml": "^4.0.9",
+     "@types/ws": "8.18.1",
+diff --git a/docs/tool-catalog.md b/docs/tool-catalog.md
+index 416585106d..a923d683e3 100644
+--- a/docs/tool-catalog.md
++++ b/docs/tool-catalog.md
+@@ -18,6 +18,8 @@ This table connects model-visible tool names to the plugin package and service s
+ | `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`, `ctx.userQuestions` | `tool/call`, `tool/result after a UI/provider answers the question` | - | ask_user_question pauses the tool call until the active UI provider returns a human answer. |
+ | `@deepseek-ai/dsh-tools` | `run_code` | `ctx.tools`, `ctx.codeRuntime (execution time)`, `ctx.systemPrompt` | `tool/call`, `one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call`, `tool/result` | - | Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: ptc` / `mode: both` (see the PTC mode Agent Note). Under `ptc` it is the registry's only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime's language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result. |
+ | `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode` | `ctx.tools`, `ctx.systemPrompt`, `ctx.userQuestions (execution time, opportunistic)` | `tool/call`, `plan/mode inactive on an approved review`, `tool/result` | - | exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary. |
++| `@deepseek-ai/dsh-tool-plan-mode` | `enter_plan_mode`, `exit_plan_mode` | `ctx.tools`, `ctx.planMode` | `tool/call`, `plan/mode active at the next accepted pre-step`, `tool/result` | - | enter_plan_mode forwards the model's intent to the plan-mode controller; an in-turn call queues the switch for the next accepted pre-step, and leaving plan mode stays gated by exit_plan_mode's user review. |
++| `@deepseek-ai/dsh-automations` | `automation_cancel`, `automation_create`, `automation_list` | `ctx.tools`, `ctx.storageDomain`, `ctx.agents (fire time)`, `ctx.agentPresets (fire time)` | `tool/call`, `tool/result`, `a fresh Session per due fire` | - | The three bounds are required deployment config; the shipped base bundle carries 65536/60/60. Firing spawns a fresh session through `ctx.agents.create` and touches no session log, and spawn-time services (`agents`, `agentPresets`) resolve at fire time. |
+ | `@deepseek-ai/dsh-tool-bash` | `bash` | `ctx.tools`, `ctx.shell`, `ctx.systemPrompt`, `ctx.shellEnv`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The bash tool is the model-facing consumer of the bash executor seam. A `run_in_background` run registers with the generic `ctx.jobs` runtime and is collected/stopped through the `job_*` tools from `@deepseek-ai/dsh-tool-jobs`; the `enableRunInBackground` config (default true) removes the parameter entirely when disabled. |
+ | `@deepseek-ai/dsh-tool-pwsh` | `pwsh` | `ctx.tools`, `ctx.shell`, `ctx.systemPrompt`, `ctx.shellEnv`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The pwsh tool is the PowerShell-dialect consumer of the bash executor seam for Windows compositions (a PowerShell executor such as `@deepseek-ai/dsh-pwsh-local` backs `ctx.shell`); it mirrors the bash tool call-for-call minus sandbox controls — `run_in_background` runs register with the generic `ctx.jobs` runtime and are collected/stopped through the `job_*` tools, and the managed `DSH_*` environment comes from `@deepseek-ai/dsh-shell-env`. Each call runs in a fresh process (no persistent PTY session), with native `C:\...` paths and `$env:NAME` variables. |
+ | `@deepseek-ai/dsh-tool-cordis` | `cordis_define`, `cordis_inspect_list`, `cordis_inspect_query`, `cordis_inspect_self`, `cordis_run`, `cordis_stop`, `cordis_undefine` | `ctx.tools`, `ctx.dynamicCordisRunner` | `tool/call`, `tool/result`, `process-local dynamic package lifecycle` | - | Not in any shipped tree (a deliberate opt-in — dynamic package code reaches the real runtime, see .agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md). The toolset injects `ctx.dynamicCordisRunner` from `@deepseek-ai/dsh-cordis-host-runner`, which owns the definition registry and the vm sandbox; a composition missing it never activates the tools. A running package may register ADDITIONAL model-visible tools until it is stopped, undefined, or DSH restarts; a full changed request header logs those tool-set changes. |
+@@ -174,6 +176,133 @@ Source: [`packages/plan/plan-mode/src/index.ts`](../packages/plan/plan-mode/src/
+ 
+ exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary.
+ 
++<a id="deepseek-aidsh-tool-plan-mode"></a>
++
++## `@deepseek-ai/dsh-tool-plan-mode`
++
++### `enter_plan_mode`
++
++Propose switching this session into plan mode. Use it before starting non-trivial implementation work when the user should approve the approach first. In plan mode you research and plan; implementation waits until your exit_plan_mode call is approved. The switch applies from your next step; the user can cancel it or leave plan mode at any time with /plan off.
++
++```json
++{
++  "type": "object",
++  "properties": {}
++}
++```
++
++Source: [`packages/plan/tool-plan-mode/src/index.ts`](../packages/plan/tool-plan-mode/src/index.ts)
++
++### `exit_plan_mode`
++
++Use only in plan mode. Present your plan for the user's review and, on approval, leave plan mode. Send the COMPLETE plan as markdown, starting with a # heading that names it. The user may approve (carry out the plan from your next step) or keep planning — their feedback comes back in the tool result; revise and present again.
++
++```json
++{
++  "type": "object",
++  "properties": {
++    "plan": {
++      "type": "string",
++      "description": "The complete plan, as markdown, starting with a # heading that names it."
++    }
++  },
++  "required": [
++    "plan"
++  ]
++}
++```
++
++Source: [`packages/plan/tool-plan-mode/src/index.ts`](../packages/plan/tool-plan-mode/src/index.ts)
++
++enter_plan_mode forwards the model's intent to the plan-mode controller; an in-turn call queues the switch for the next accepted pre-step, and leaving plan mode stays gated by exit_plan_mode's user review.
++
++<a id="deepseek-aidsh-automations"></a>
++
++## `@deepseek-ai/dsh-automations`
++
++### `automation_cancel`
++
++Cancel one scheduled automation by id. Idempotent per id: cancelling an unknown id reports so.
++
++```json
++{
++  "type": "object",
++  "properties": {
++    "id": {
++      "type": "string",
++      "description": "The automation id from automation_create or automation_list."
++    }
++  },
++  "required": [
++    "id"
++  ]
++}
++```
++
++Source: [`packages/schedule/automations/src/index.ts`](../packages/schedule/automations/src/index.ts)
++
++### `automation_create`
++
++Schedule a recurring or one-shot automation: store a prompt that spawns a FRESH session in this workspace when due. The process must be running at the due time; missed occurrences coalesce into one catch-up fire.
++
++```json
++{
++  "type": "object",
++  "properties": {
++    "title": {
++      "type": "string",
++      "description": "A short (3-5 word) label shown in list output and as the spawned session title."
++    },
++    "prompt": {
++      "type": "string",
++      "description": "The complete, self-contained task the spawned session will receive as its user message. It starts with no context from this conversation."
++    },
++    "kind": {
++      "type": "string",
++      "description": "\"after\" fires once delay_seconds from now; \"at\" fires once at the ISO-8601 `at` timestamp; \"every\" fires on a fixed rate of interval_seconds. \"after\" and \"at\" are one-shot."
++    },
++    "delay_seconds": {
++      "type": "number",
++      "description": "Seconds from now until the one-shot fire (kind \"after\")."
++    },
++    "at": {
++      "type": "string",
++      "description": "ISO-8601 timestamp of the one-shot fire (kind \"at\")."
++    },
++    "interval_seconds": {
++      "type": "number",
++      "description": "Fixed-rate interval in seconds (kind \"every\")."
++    },
++    "max_runs": {
++      "type": "number",
++      "description": "Fire ceiling for recurring (\"every\") automations; omit for unbounded."
++    }
++  },
++  "required": [
++    "title",
++    "prompt",
++    "kind"
++  ]
++}
++```
++
++Source: [`packages/schedule/automations/src/index.ts`](../packages/schedule/automations/src/index.ts)
++
++### `automation_list`
++
++List the scheduled automations of this deployment with their next fire times.
++
++```json
++{
++  "type": "object",
++  "properties": {}
++}
++```
++
++Source: [`packages/schedule/automations/src/index.ts`](../packages/schedule/automations/src/index.ts)
++
++The three bounds are required deployment config; the shipped base bundle carries 65536/60/60. Firing spawns a fresh session through `ctx.agents.create` and touches no session log, and spawn-time services (`agents`, `agentPresets`) resolve at fire time.
++
+ <a id="deepseek-aidsh-tool-bash"></a>
+ 
+ ## `@deepseek-ai/dsh-tool-bash`
+diff --git a/packages/bundle/base/cordis.patch.yml b/packages/bundle/base/cordis.patch.yml
+index 94b5d23204..9138b32a4e 100644
+--- a/packages/bundle/base/cordis.patch.yml
++++ b/packages/bundle/base/cordis.patch.yml
+@@ -155,6 +155,18 @@
+       config:
+         backend: json
+ 
++    # Cross-session automations: durable stored prompts that spawn a fresh
++    # session when due. Host-plane by design — records outlive every session,
++    # and the driver must run while the process is alive, whatever sessions
++    # exist. The bounds keep one bad create call from storing a megabyte
++    # prompt or a 1-second hot loop.
++    - id: automations
++      name: '@deepseek-ai/dsh-automations'
++      config:
++        maxPromptBytes: 65536
++        minDelaySeconds: 60
++        minIntervalSeconds: 60
++
+     # Persisted projection cache: throttled write-behind over the
+     # session_projcache domain (per-record layout — one version-stamped
+     # checkpoint document per session), serving the session listing's
+diff --git a/packages/bundle/base/package.json b/packages/bundle/base/package.json
+index e4d0227451..a03ca9253d 100644
+--- a/packages/bundle/base/package.json
++++ b/packages/bundle/base/package.json
+@@ -63,6 +63,8 @@
+     "@deepseek-ai/dsh-llm-retry": "workspace:^",
+     "@deepseek-ai/dsh-permission-presets": "workspace:^",
+     "@deepseek-ai/dsh-plan-mode": "workspace:^",
++    "@deepseek-ai/dsh-tool-plan-mode": "workspace:^",
++    "@deepseek-ai/dsh-automations": "workspace:^",
+     "@deepseek-ai/dsh-pwsh-sandbox": "workspace:^",
+     "@deepseek-ai/dsh-repeat-tool-reminder": "workspace:^",
+     "@deepseek-ai/dsh-sandbox-local": "workspace:^",
+diff --git a/packages/client/ui-agent-preset/src/client/locales.ts b/packages/client/ui-agent-preset/src/client/locales.ts
+index a4dbdd949b..79ade57980 100644
+--- a/packages/client/ui-agent-preset/src/client/locales.ts
++++ b/packages/client/ui-agent-preset/src/client/locales.ts
+@@ -1,13 +1,14 @@
+-/** Locale bundles for the agent-preset hero chip, header label, and management section. */
++/** Locale bundles for the agent-preset settings row, hero chip, header label, and management section. */
+ 
+ /** Locale keys these surfaces render. */
+ export type AgentPresetSettingsKey =
+-  | 'error' | 'userTrust' | 'seatHint' | 'headerHint'
++  | 'title' | 'description' | 'loading' | 'error' | 'userTrust' | 'seatHint' | 'headerHint'
+   | 'nav' | 'sectionIntro' | 'builtIn' | 'setDefault' | 'view'
+   | 'presetStandardName' | 'presetStandardDescription'
+   | 'presetPtcName' | 'presetPtcDescription'
+   | 'presetMinimalName' | 'presetMinimalDescription'
+   | 'presetCordisName' | 'presetCordisDescription'
++  | 'presetAutonomousName' | 'presetAutonomousDescription'
+   | 'duplicate' | 'duplicateUnavailable' | 'delete' | 'presetId' | 'presetIdPlaceholder' | 'copyOf'
+   | 'displayName' | 'displayNamePlaceholder'
+   | 'inUse' | 'noDescription' | 'builtInGroup' | 'customGroup'
+@@ -20,6 +21,9 @@ export type AgentPresetSettingsKey =
+ 
+ /** English copy. */
+ export const en: Record<AgentPresetSettingsKey, string> = {
++  title: 'Agent preset',
++  description: 'Applies to sessions you start from now on. Running sessions keep the preset they began with.',
++  loading: 'Loading presets…',
+   error: 'Could not load agent presets.',
+   userTrust: 'Custom',
+   seatHint: 'Agent preset for the session you are about to start',
+@@ -36,13 +40,16 @@ export const en: Record<AgentPresetSettingsKey, string> = {
+     'Full coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows.',
+   presetPtcName: 'PTC mode',
+   presetPtcDescription:
+-    'Full coding agent without the workflow tool; other tools are exposed through the PTC mode SDK so the model can combine multi-step operations in one TypeScript program.',
++    'All Standard mode capabilities, with tools exposed through the PTC mode SDK so the model can combine multi-step operations in one TypeScript program.',
+   presetMinimalName: 'Minimal mode',
+   presetMinimalDescription:
+     'Two-tool coding agent with persistent bash and str_replace_editor.',
+   presetCordisName: 'Creator mode',
+   presetCordisDescription:
+     'Built for creating custom agent presets, with all Standard mode capabilities plus runtime inspection, plugin experiments, and preset-authoring guidance.',
++  presetAutonomousName: 'Autonomous mode',
++  presetAutonomousDescription:
++    'A coding agent modeled on ZCode\'s Agent mode: it explores first, acts on its own for reversible steps, tracks progress on a todo list, fans read-only exploration out to subagents, and verifies before claiming done.',
+   duplicate: 'Duplicate',
+   duplicateUnavailable: 'This deployment has no writable preset directory',
+   delete: 'Delete',
+@@ -84,6 +91,9 @@ export const en: Record<AgentPresetSettingsKey, string> = {
+ 
+ /** Simplified Chinese copy. */
+ export const zh: Record<AgentPresetSettingsKey, string> = {
++  title: 'Agent 预设',
++  description: '对此后新建的会话生效。运行中的会话保持它开始时的预设。',
++  loading: '正在加载预设…',
+   error: '无法加载 Agent 预设。',
+   userTrust: '自定义',
+   seatHint: '即将开始的这个会话所用的 Agent 预设',
+@@ -96,11 +106,14 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
+   presetStandardName: '标准模式',
+   presetStandardDescription: '功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流。',
+   presetPtcName: 'PTC 模式',
+-  presetPtcDescription: '功能完整的编码 Agent，但默认不提供 workflow 工具；其他工具通过 PTC 模式 SDK 呈现，让模型用一个 TypeScript 程序组合多步操作。',
++  presetPtcDescription: '具备标准模式的全部能力，并通过 PTC 模式 SDK 呈现工具，让模型用一个 TypeScript 程序组合多步操作。',
+   presetMinimalName: '极简模式',
+   presetMinimalDescription: '仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent。',
+   presetCordisName: '创造模式',
+   presetCordisDescription: '用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导。',
++  presetAutonomousName: '自主模式',
++  presetAutonomousDescription:
++    '仿照 ZCode Agent 模式的自主编码 Agent：先探索后动手，可逆步骤自主推进，用任务清单跟踪进度，把只读探索分派给子代理，并在宣称完成前先验证。',
+   duplicate: '复制',
+   duplicateUnavailable: '此部署未配置可写的预设目录',
+   delete: '删除',
+@@ -137,8 +150,53 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
+   deleting: '正在删除…',
+ }
+ 
+-// The resolution itself is the shared fold in `dsh-agent-presets/display`,
+-// re-exported here so every surface in this plugin reads one path; the
+-// Settings plugin list inlines the same fold over this plugin's dictionaries.
+-export { presetDisplayText } from '@deepseek-ai/dsh-agent-presets/display'
+-export type { PresetDisplaySource, PresetDisplayText } from '@deepseek-ai/dsh-agent-presets/display'
++/** Preset roster fields needed to resolve Web display copy. */
++export interface PresetDisplaySource {
++  /** Stable preset id. */
++  readonly id: string
++  /** Whether the deployment ships the preset or the user owns it. */
++  readonly trust: 'system' | 'user'
++  /** Unlocalized name published by the preset. */
++  readonly name?: string
++  /** Unlocalized description published by the preset. */
++  readonly description?: string
++}
++
++/** Display copy resolved for the active Web locale. */
++export interface PresetDisplayText {
++  /** Localized built-in name or the preset's own fallback name. */
++  readonly name: string
++  /** Localized built-in description or the preset's own description. */
++  readonly description?: string
++}
++
++interface PresetLocaleKeys {
++  readonly name: AgentPresetSettingsKey
++  readonly description: AgentPresetSettingsKey
++}
++
++const BUILT_IN_PRESET_KEYS: Readonly<Partial<Record<string, PresetLocaleKeys>>> = {
++  standard: { name: 'presetStandardName', description: 'presetStandardDescription' },
++  ptc: { name: 'presetPtcName', description: 'presetPtcDescription' },
++  minimal: { name: 'presetMinimalName', description: 'presetMinimalDescription' },
++  cordis: { name: 'presetCordisName', description: 'presetCordisDescription' },
++  autonomous: { name: 'presetAutonomousName', description: 'presetAutonomousDescription' },
++}
++
++/**
++ * Resolve preset display copy without making user-authored metadata translatable.
++ * @param preset - roster row whose copy is being rendered.
++ * @param t - active Web locale lookup.
++ * @returns localized copy for a known shipped preset, otherwise file metadata.
++ */
++export function presetDisplayText(
++  preset: PresetDisplaySource,
++  t: (key: AgentPresetSettingsKey) => string,
++): PresetDisplayText {
++  const keys = preset.trust === 'system' ? BUILT_IN_PRESET_KEYS[preset.id] : undefined
++  if (keys !== undefined) return { name: t(keys.name), description: t(keys.description) }
++  return {
++    name: preset.name ?? preset.id,
++    ...preset.description === undefined ? {} : { description: preset.description },
++  }
++}
+diff --git a/packages/client/web/src/seed.ts b/packages/client/web/src/seed.ts
+index 1f213641ca..4acb6d073a 100644
+--- a/packages/client/web/src/seed.ts
++++ b/packages/client/web/src/seed.ts
+@@ -14,7 +14,7 @@ import * as Cordis from '@deepseek-ai/cordis'
+ import * as ClientStore from '@deepseek-ai/dsh-client-store'
+ import * as UiSlots from '@deepseek-ai/dsh-client-ui-slots'
+ import * as UiPrimitives from '@deepseek-ai/dsh-client-ui-primitives'
+-import type { PlatformModule } from './platform.ts'
++
+ 
+ /**
+  * Build the static table handed to the module loader at boot.
+@@ -31,7 +31,8 @@ export function getStaticModules(): Record<string, unknown> {
+     'react-dom/client': ReactDomClient,
+     '@deepseek-ai/cordis': Cordis,
+     '@deepseek-ai/dsh-client-store': ClientStore,
++    '@deepseek-ai/dsh-client-runtime/client': ClientStore,
+     '@deepseek-ai/dsh-client-ui-slots': UiSlots,
+     '@deepseek-ai/dsh-client-ui-primitives': UiPrimitives,
+-  } satisfies Record<PlatformModule, unknown>
++  }
+ }
+diff --git a/packages/plan/plan-mode/src/index.ts b/packages/plan/plan-mode/src/index.ts
+index 1372a90f50..9ddcf19f38 100644
+--- a/packages/plan/plan-mode/src/index.ts
++++ b/packages/plan/plan-mode/src/index.ts
+@@ -175,8 +175,8 @@ export class PlanModeController extends Service {
+ 
+   /**
+    * Latest selection per session awaiting the next accepted in-turn pre-step.
+-   * `narrate` is true for user selections and false for the exit tool, whose
+-   * result already narrates the transition.
++   * `narrate` is true for user selections and the entry tool, false for the
++   * exit tool, whose result already narrates the transition.
+    */
+   private readonly pendingIntents = new WeakMap<Session, { active: boolean; narrate: boolean }>()
+ 
+@@ -446,13 +446,15 @@ export class PlanModeController extends Service {
+     this.pendingIntents.delete(session)
+   }
+ 
+-  /** Build a user-switch notice when the last logged header described the other mode. */
++  /** Build a mode-change notice when the last logged header described the other mode. */
+   private narration(session: Session, target: boolean): UserMessage | undefined {
+     const told = this.loggedActiveAtLastHeader(session)
+     if (told === undefined || told === target) return
++    // Source-neutral on purpose: the user (a `/plan` selection) and the agent
++    // (the entry tool) both land here, and the model only needs the fact.
+     const text = target
+-      ? 'The user switched this session to plan mode.'
+-      : 'The user switched this session back to the default mode.'
++      ? 'Plan mode is now active.'
++      : 'Plan mode is now inactive.'
+     return createUserMessage({
+       content: [{ type: 'text', text }],
+       // The narration is already one sentence, so it is its own summary.
+diff --git a/packages/plan/plan-mode/tests/integration.spec.ts b/packages/plan/plan-mode/tests/integration.spec.ts
+index 5e4240e05b..596a8d0319 100644
+--- a/packages/plan/plan-mode/tests/integration.spec.ts
++++ b/packages/plan/plan-mode/tests/integration.spec.ts
+@@ -126,7 +126,7 @@ describe('plan mode through the agent loop', () => {
+     const notices = log.filter(event => event.type === 'user/message' && event.data.source.kind === 'plugin')
+     expect(notices).toHaveLength(1)
+     expect(notices[0]?.type === 'user/message' && notices[0].data.content).toEqual([
+-      { type: 'text', text: 'The user switched this session to plan mode.' },
++      { type: 'text', text: 'Plan mode is now active.' },
+     ])
+     // The changed request is logged as a complete snapshot.
+     const second = findEvent(log, 'request/header', 'last')
+@@ -183,7 +183,7 @@ describe('plan mode through the agent loop', () => {
+     expect(findEvent(log, 'request/header', 'last').data.header.system).toContain(PLAN_CONFIG.section)
+     const notice = log.find(event => event.type === 'user/message' && event.data.source.kind === 'plugin')
+     expect(notice?.type === 'user/message' && notice.data.content).toEqual([
+-      { type: 'text', text: 'The user switched this session to plan mode.' },
++      { type: 'text', text: 'Plan mode is now active.' },
+     ])
+   })
+ })
+diff --git a/packages/plan/plan-mode/tests/plan-mode.spec.ts b/packages/plan/plan-mode/tests/plan-mode.spec.ts
+index cd53724e34..3558e6c9cf 100644
+--- a/packages/plan/plan-mode/tests/plan-mode.spec.ts
++++ b/packages/plan/plan-mode/tests/plan-mode.spec.ts
+@@ -308,7 +308,7 @@ describe('ctx.planMode: get/set', () => {
+     const agent = await agentWithSession(ctx, 'agent-idle-narrate')
+     header(agent.session)
+     ctx.planMode.set(agent, true)
+-    expect(noticeTexts(agent.session)).toEqual(['The user switched this session to plan mode.'])
++    expect(noticeTexts(agent.session)).toEqual(['Plan mode is now active.'])
+   })
+ })
+ 
+@@ -380,9 +380,9 @@ describe('the boundary flush', () => {
+     header(agent.session)
+     ctx.planMode.set(agent, true)
+     await boundary(ctx, agent, 'step-start')
+-    expect(noticeTexts(agent.session)).toEqual(['The user switched this session to plan mode.'])
++    expect(noticeTexts(agent.session)).toEqual(['Plan mode is now active.'])
+     await boundary(ctx, agent, 'step-start')
+-    expect(noticeTexts(agent.session)).toEqual(['The user switched this session to plan mode.'])
++    expect(noticeTexts(agent.session)).toEqual(['Plan mode is now active.'])
+   })
+ 
+   it('narrates a switch back to the default mode with the default wording', async () => {
+@@ -392,7 +392,7 @@ describe('the boundary flush', () => {
+     header(agent.session)
+     ctx.planMode.set(agent, false)
+     await boundary(ctx, agent, 'step-start')
+-    expect(noticeTexts(agent.session)).toEqual(['The user switched this session back to the default mode.'])
++    expect(noticeTexts(agent.session)).toEqual(['Plan mode is now inactive.'])
+   })
+ 
+   it('stays silent when the header already reflects the flushed mode', async () => {
+diff --git a/packages/preset/agent-presets/tests/shipped-root.spec.ts b/packages/preset/agent-presets/tests/shipped-root.spec.ts
+index 323c56ee12..949423ec91 100644
+--- a/packages/preset/agent-presets/tests/shipped-root.spec.ts
++++ b/packages/preset/agent-presets/tests/shipped-root.spec.ts
+@@ -16,7 +16,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
+ import { Context } from '@deepseek-ai/cordis'
+ import Loader from '@deepseek-ai/cordis-plugin-loader'
+ import Include, { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+-import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+ import * as yaml from 'js-yaml'
+ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+ import AgentPresets, { SHIPPED_PRESET_ROOT, type Config } from '@deepseek-ai/dsh-agent-presets'
+@@ -42,7 +41,6 @@ async function roster(config: Partial<Config> = {}): Promise<Context> {
+   ctx.baseUrl = pathToFileURL(FIXTURES).href + '/'
+   await ctx.plugin(Loader)
+   ctx.loader.builtins.include = Include
+-  await ctx.plugin(SessionProjectionRegistry)
+   await ctx.plugin(AgentPresets, {
+     default: 'standard',
+     roots: [],
+@@ -53,40 +51,13 @@ async function roster(config: Partial<Config> = {}): Promise<Context> {
+   return ctx
+ }
+ 
+-interface ShippedEntry {
+-  id?: unknown
+-  disabled?: unknown
+-  config?: unknown
+-}
+-
+-/** Find one entry through the shipped composition's nested groups. */
+-function findEntry(entries: unknown[], id: string): ShippedEntry | undefined {
+-  for (const entry of entries) {
+-    if (typeof entry !== 'object' || entry === null) continue
+-    const candidate = entry as ShippedEntry
+-    if (candidate.id === id) return candidate
+-    if (Array.isArray(candidate.config)) {
+-      const nested = findEntry(candidate.config, id)
+-      if (nested !== undefined) return nested
+-    }
+-  }
+-  return undefined
+-}
+-
+-/** Read and validate one shipped preset's Cordis entry list. */
+-async function shippedEntries(id: string): Promise<unknown[]> {
+-  const source = await readFile(join(SHIPPED_PRESET_ROOT, id, 'agent.cordis.yml'), 'utf8')
+-  const entries: unknown = yaml.load(source, { schema: entryListSchema })
+-  if (!Array.isArray(entries)) throw new TypeError(`${id} preset must contain a Cordis entry list`)
+-  return entries.map((entry: unknown) => entry)
+-}
+-
+ describe('the shipped preset root', () => {
+   it('supplies the built-in presets from a bare roster, healthy and system-trusted', async () => {
+     const ctx = await roster({ includeUserRoot: false })
+ 
+     const listed = await ctx.agentPresets.list()
+-    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'minimal', 'ptc', 'standard'])
++    expect(listed.map(preset => preset.id).sort())
++      .toEqual(['autonomous', 'cordis', 'minimal', 'ptc', 'standard'])
+     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
+     // Not `broken === undefined`: health asks whether each row's package is
+     // installed above the base, and the shipped rows name packages the
+@@ -126,8 +97,10 @@ describe('the shipped preset root', () => {
+   })
+ 
+   it('enables web_fetch in each tool-bearing Web app preset', async () => {
+-    for (const id of ['cordis', 'ptc', 'standard']) {
+-      const entries = await shippedEntries(id)
++    for (const id of ['autonomous', 'cordis', 'ptc', 'standard']) {
++      const source = await readFile(join(SHIPPED_PRESET_ROOT, id, 'agent.cordis.yml'), 'utf8')
++      const entries: unknown = yaml.load(source, { schema: entryListSchema })
++      if (!Array.isArray(entries)) throw new TypeError(`${id} preset must contain a Cordis entry list`)
+       const toolWeb: unknown = entries.find((entry: unknown) =>
+         typeof entry === 'object' && entry !== null && 'id' in entry && entry.id === 'tool-web')
+       if (typeof toolWeb !== 'object' || toolWeb === null || !('config' in toolWeb)
+@@ -137,15 +110,4 @@ describe('the shipped preset root', () => {
+       expect(toolWeb.config.fetch, id).toBe(true)
+     }
+   })
+-
+-  it('omits the general workflow tool only from PTC while retaining Ralph infrastructure', async () => {
+-    const ptc = await shippedEntries('ptc')
+-    expect(findEntry(ptc, 'tool-workflow')?.disabled).toBe(true)
+-    expect(findEntry(ptc, 'workflow-worker-thread')?.disabled).not.toBe(true)
+-    expect(findEntry(ptc, 'tool-ralph')?.disabled).not.toBe(true)
+-
+-    for (const id of ['standard', 'cordis']) {
+-      expect(findEntry(await shippedEntries(id), 'tool-workflow')?.disabled, id).not.toBe(true)
+-    }
+-  })
+ })
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index c0329310ce..7d690633fb 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -150,6 +150,9 @@ importers:
+       '@deepseek-ai/dsh-app-boot':
+         specifier: workspace:^
+         version: link:../../packages/boot/app-boot
++      '@deepseek-ai/dsh-automations':
++        specifier: workspace:^
++        version: link:../../packages/schedule/automations
+       '@deepseek-ai/dsh-base':
+         specifier: workspace:^
+         version: link:../../packages/bundle/base
+@@ -279,6 +282,9 @@ importers:
+       '@deepseek-ai/dsh-tool-jobs':
+         specifier: workspace:^
+         version: link:../../packages/jobs/tool-jobs
++      '@deepseek-ai/dsh-tool-plan-mode':
++        specifier: workspace:^
++        version: link:../../packages/plan/tool-plan-mode
+       '@deepseek-ai/dsh-tool-pwsh':
+         specifier: workspace:^
+         version: link:../../packages/shell/tool-pwsh
+@@ -1052,6 +1058,9 @@ importers:
+       '@deepseek-ai/dsh-attachment-local':
+         specifier: workspace:^
+         version: link:../../attachment/attachment-local
++      '@deepseek-ai/dsh-automations':
++        specifier: workspace:^
++        version: link:../../schedule/automations
+       '@deepseek-ai/dsh-bash-sandbox':
+         specifier: workspace:^
+         version: link:../../shell/bash-sandbox
+@@ -1226,6 +1235,9 @@ importers:
+       '@deepseek-ai/dsh-tool-jobs':
+         specifier: workspace:^
+         version: link:../../jobs/tool-jobs
++      '@deepseek-ai/dsh-tool-plan-mode':
++        specifier: workspace:^
++        version: link:../../plan/tool-plan-mode
+       '@deepseek-ai/dsh-tool-pwsh':
+         specifier: workspace:^
+         version: link:../../shell/tool-pwsh
+@@ -3959,6 +3971,12 @@ importers:
+         specifier: workspace:^
+         version: link:../../llm/token-meter
+ 
++  packages/compat/dsh-compat-shim:
++    dependencies:
++      '@deepseek-ai/cordis':
++        specifier: workspace:^
++        version: link:../../../vendor/cordis
++
+   packages/context/agent-instructions:
+     dependencies:
+       '@deepseek-ai/dsh-util-values':
+@@ -6513,6 +6531,30 @@ importers:
+         specifier: workspace:^
+         version: link:../../interaction/user-questions
+ 
++  packages/plan/tool-plan-mode:
++    devDependencies:
++      '@deepseek-ai/cordis':
++        specifier: workspace:^
++        version: link:../../../vendor/cordis
++      '@deepseek-ai/dsh-agent':
++        specifier: workspace:^
++        version: link:../../core/agent
++      '@deepseek-ai/dsh-llm':
++        specifier: workspace:^
++        version: link:../../llm/llm
++      '@deepseek-ai/dsh-plan-mode':
++        specifier: workspace:^
++        version: link:../plan-mode
++      '@deepseek-ai/dsh-session':
++        specifier: workspace:^
++        version: link:../../core/session
++      '@deepseek-ai/dsh-system-prompt':
++        specifier: workspace:^
++        version: link:../../core/system-prompt
++      '@deepseek-ai/dsh-tools':
++        specifier: workspace:^
++        version: link:../../core/tools
++
+   packages/preset/agent-presets:
+     dependencies:
+       '@deepseek-ai/schemastery':
+@@ -6700,6 +6742,52 @@ importers:
+         specifier: workspace:^
+         version: link:../sandbox-local
+ 
++  packages/schedule/automations:
++    dependencies:
++      '@deepseek-ai/schemastery':
++        specifier: link:../../../vendor/schemastery
++        version: link:../../../vendor/schemastery
++      zod:
++        specifier: ^4.4.3
++        version: 4.4.3
++    devDependencies:
++      '@deepseek-ai/cordis':
++        specifier: workspace:^
++        version: link:../../../vendor/cordis
++      '@deepseek-ai/dsh-agent':
++        specifier: workspace:^
++        version: link:../../core/agent
++      '@deepseek-ai/dsh-agent-presets':
++        specifier: workspace:^
++        version: link:../../preset/agent-presets
++      '@deepseek-ai/dsh-brand':
++        specifier: workspace:^
++        version: link:../../util/brand
++      '@deepseek-ai/dsh-llm':
++        specifier: workspace:^
++        version: link:../../llm/llm
++      '@deepseek-ai/dsh-session':
++        specifier: workspace:^
++        version: link:../../core/session
++      '@deepseek-ai/dsh-session-title':
++        specifier: workspace:^
++        version: link:../../session/session-title
++      '@deepseek-ai/dsh-storage':
++        specifier: workspace:^
++        version: link:../../storage/storage
++      '@deepseek-ai/dsh-storage-domain':
++        specifier: workspace:^
++        version: link:../../storage/storage-domain
++      '@deepseek-ai/dsh-storage-json':
++        specifier: workspace:^
++        version: link:../../storage/storage-json
++      '@deepseek-ai/dsh-tools':
++        specifier: workspace:^
++        version: link:../../core/tools
++      '@deepseek-ai/dsh-workspace':
++        specifier: workspace:^
++        version: link:../../workspace/workspace
++
+   packages/schedule/schedule:
+     dependencies:
+       zod:
+diff --git a/scripts/gen-tool-catalog.ts b/scripts/gen-tool-catalog.ts
+index 972eadc1b8..31d035883c 100644
+--- a/scripts/gen-tool-catalog.ts
++++ b/scripts/gen-tool-catalog.ts
+@@ -29,6 +29,11 @@ import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
+ import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
+ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
+ import PlanModeController from '@deepseek-ai/dsh-plan-mode'
++import * as ToolPlanMode from '@deepseek-ai/dsh-tool-plan-mode'
++import Storage from '@deepseek-ai/dsh-storage'
++import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
++import * as StorageJson from '@deepseek-ai/dsh-storage-json'
++import * as Automations from '@deepseek-ai/dsh-automations'
+ import WebRuntime from '@deepseek-ai/dsh-web'
+ import * as WebSearchExa from '@deepseek-ai/dsh-web-search-exa'
+ import * as WebFetchLocal from '@deepseek-ai/dsh-web-fetch-http'
+@@ -226,6 +231,37 @@ const TOOL_PACKAGES: ToolPackage[] = [
+     note:
+       'exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary.',
+   },
++  {
++    pkg: '@deepseek-ai/dsh-tool-plan-mode',
++    dir: 'tool-plan-mode',
++    source: 'packages/plan/tool-plan-mode/src/index.ts',
++    requires: ['ctx.tools', 'ctx.planMode'],
++    writes: ['tool/call', 'plan/mode active at the next accepted pre-step', 'tool/result'],
++    async mount(ctx) {
++      await ctx.plugin(PlanModeController, { section: 'Tool catalog schema harvest.' })
++      await ctx.plugin(ToolPlanMode)
++    },
++    note:
++      'enter_plan_mode forwards the model\'s intent to the plan-mode controller; an in-turn call queues the switch for the next accepted pre-step, and leaving plan mode stays gated by exit_plan_mode\'s user review.',
++  },
++  {
++    pkg: '@deepseek-ai/dsh-automations',
++    dir: 'automations',
++    source: 'packages/schedule/automations/src/index.ts',
++    requires: ['ctx.tools', 'ctx.storageDomain', 'ctx.agents (fire time)', 'ctx.agentPresets (fire time)'],
++    writes: ['tool/call', 'tool/result', 'a fresh Session per due fire'],
++    async mount(ctx) {
++      // The service persists in the `automations` storage domain; the harvest
++      // mounts the json backend over a throwaway root. Config bounds are
++      // required with no default, so the catalog shows this branch.
++      await ctx.plugin(Storage)
++      await ctx.plugin(StorageJson, { root: resolve('node_modules/.cache/dsh-tool-catalog-automations') })
++      await ctx.plugin(StorageDomain, { backend: 'json' })
++      await ctx.plugin(Automations.default, { maxPromptBytes: 65536, minDelaySeconds: 60, minIntervalSeconds: 60 })
++    },
++    note:
++      'The three bounds are required deployment config; the shipped base bundle carries 65536/60/60. Firing spawns a fresh session through `ctx.agents.create` and touches no session log, and spawn-time services (`agents`, `agentPresets`) resolve at fire time.',
++  },
+   {
+     pkg: '@deepseek-ai/dsh-tool-bash',
+     dir: 'tool-bash',
+diff --git a/scripts/verify-package-readme-model-experience.ts b/scripts/verify-package-readme-model-experience.ts
+index b87ca86feb..e034e28d07 100644
+--- a/scripts/verify-package-readme-model-experience.ts
++++ b/scripts/verify-package-readme-model-experience.ts
+@@ -31,11 +31,10 @@ interface SentenceContract {
+  */
+ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
+   'packages/core/scope': 'The package is a model-agnostic registration and lifecycle primitive; model-facing consumers own any context selection.',
+-  'packages/util/brand': 'The package only constructs plain string values and registers nothing model-facing.',
++  'packages/util/brand': 'The package is a type-only primitive erased at compile time.',
+   'packages/util/home-paths': 'The package only resolves harness-owned host paths; model-facing consumers own any rendered use.',
+   'packages/util/launch-environment': 'The package only resolves host environment values; model-facing consumers own any rendered use.',
+   'packages/util/workspace-path': 'The package only formats Workspace paths for browser UI; it never constructs model input.',
+-  'packages/util/values': 'The package only validates, snapshots, compares, freezes, or rejects caller-owned values; consumers own every model-facing use.',
+ }
+ 
+ /**
+@@ -53,11 +52,10 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
+   'packages/code-runtime/code-runtime': { kind: 'indirect', reason: 'The service interface delegates model rendering to PTC mode in dsh-tools.' },
+   'packages/core/agent-tool-presentation': { kind: 'indirect', reason: 'The row only selects between the two projections dsh-tools owns; it registers no prompt, schema, or result of its own.' },
+   'packages/code-runtime/code-runtime-worker-thread': { kind: 'indirect', reason: 'The worker backend delegates model rendering to PTC mode in dsh-tools.' },
+-  'packages/experimental/code-runtime-python': { kind: 'indirect', reason: 'Explicit source-checkout compositions delegate model rendering to PTC mode in dsh-tools.' },
++  'packages/code-runtime/code-runtime-python': { kind: 'indirect', reason: 'The CPython subprocess backend delegates model rendering to PTC mode in dsh-tools.' },
+   'packages/client/ui-agent-preset': { kind: 'indirect', reason: 'Browser-side settings row; the preset it selects owns every model-facing effect.' },
+   'packages/util/crypto': { kind: 'indirect', reason: 'Pure identifier minting; the ids consumers mint with it never enter prompts as semantic content.' },
+-  'packages/util/deque': { kind: 'none', reason: 'In-process collection primitive; registers nothing model-facing.' },
+-  'packages/util/time': { kind: 'indirect', reason: 'Pure zone validation; the consumer that records a canonical zone owns the model-visible line derived from it.' },
++  'packages/compat/dsh-compat-shim': { kind: 'indirect', reason: 'The shim exposes legacy host services to old plugins; it registers no prompt, tool schema, or context of its own.' },
+   'packages/core/agent-default-model': { kind: 'indirect', reason: 'The service supplies a ModelSelection; request assembly and adapters own the model-visible request.' },
+   'packages/llm/deepseek-llm-api-extensions': { kind: 'indirect', reason: 'The registry contributes model-hidden provider fields; dsh-llm-deepseek owns their wire placement.' },
+   'packages/preset/agent-presets': { kind: 'indirect', reason: 'The mount installs a preset\'s own plugins, which own every model-facing registration it makes visible.' },
+@@ -89,7 +87,6 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
+   'packages/client/ui-message-feedback': { kind: 'none', reason: 'Browser-side controls over the message-feedback sidecar; ratings and notes never enter the Session log, model context, or telemetry.' },
+   'packages/client/ui-tool': { kind: 'none', reason: 'Browser-side Tool presentation layer; renders logged calls without changing model context.' },
+   'packages/client/ui-jobs': { kind: 'none', reason: 'Browser-side read-only projection of ctx.jobs records; dsh-tool-jobs owns the model-facing behavior.' },
+-  'packages/client/ui-schedule': { kind: 'none', reason: 'Browser-side read-only projection of active Schedule records; dsh-schedule owns the model-facing tools and delivery.' },
+   'packages/client/ui-workflow-run': { kind: 'none', reason: 'Browser-side UI plugin layer; renders durable workflow records without changing model context.' },
+   'packages/client/ui-input-trigger': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
+   'packages/client/ui-reference': { kind: 'indirect', reason: 'Browser-side reference selection delegates file guidance and session snapshot preparation to Host-owned providers.' },
+@@ -112,6 +109,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
+   'packages/client/ui-settings-plugin-inventory': { kind: 'none', reason: 'Browser-side inventory projection; registers nothing model-facing.' },
+   'packages/client/locale': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
+   'packages/client/web': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
++  'packages/examples/agent-spine-demo': { kind: 'indirect', reason: 'The bundle only mounts model-facing child plugins.' },
+   'packages/context/file-reference': { kind: 'indirect', reason: 'The discovery seam and grammar delegate model guidance to the composed provider.' },
+   'packages/fs/fs': { kind: 'indirect', reason: 'The service interface delegates model rendering to dsh-tool-fs.' },
+   'packages/e2b/fs-e2b': { kind: 'indirect', reason: 'The provider backend delegates model rendering to dsh-tool-fs.' },
+@@ -141,7 +139,6 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
+   'packages/session/session-projection': { kind: 'none', reason: 'The projection registry serves client-facing read models of already-logged session state and registers nothing model-facing.' },
+   'packages/session/session-projection-cache': { kind: 'none', reason: 'The persisted cache accelerates host-side cold reads of projection state and registers nothing model-facing.' },
+   'packages/session/session-stats': { kind: 'none', reason: 'The sessionStats unit folds already-logged step boundaries into a client-facing read model and registers nothing model-facing.' },
+-  'packages/session/session-turn-outline': { kind: 'none', reason: 'The turnOutline unit folds already-logged turn boundaries into a client-facing read model and registers nothing model-facing.' },
+   'packages/session-query/session-query': { kind: 'none', reason: 'The trusted query service exposes cloned records only to callers and registers nothing model-facing.' },
+   'packages/session-query/session-query-sqlite': { kind: 'none', reason: 'The search backend returns hits only to callers and registers nothing model-facing.' },
+   'packages/settings/settings': { kind: 'indirect', reason: 'The seam stores and resolves user settings; consumer plugins own any model-facing content fed by a value.' },
+diff --git a/tsconfig.base.json b/tsconfig.base.json
+index b6daa12c06..1ba961b368 100644
+--- a/tsconfig.base.json
++++ b/tsconfig.base.json
+@@ -308,6 +308,9 @@
+       "@deepseek-ai/dsh-permission-presets/invariant": ["./packages/interaction/permission-presets/src/invariant.ts"],
+       "@deepseek-ai/dsh-persona": ["./packages/preset/persona/src"],
+       "@deepseek-ai/dsh-plan-mode": ["./packages/plan/plan-mode/src"],
++      "@deepseek-ai/dsh-tool-plan-mode": ["./packages/plan/tool-plan-mode/src"],
++      "@deepseek-ai/dsh-automations": ["./packages/schedule/automations/src"],
++      "@deepseek-ai/dsh-compat-shim": ["./packages/compat/dsh-compat-shim/src"],
+       "@deepseek-ai/dsh-plan-mode/invariant": ["./packages/plan/plan-mode/src/invariant.ts"],
+       "@deepseek-ai/dsh-plugin-package-inventory-deepseek": ["./packages/llm/plugin-package-inventory-deepseek/src"],
+       "@deepseek-ai/dsh-pwsh-sandbox": ["./packages/shell/pwsh-sandbox/src"],
+diff --git a/tsconfig.host.json b/tsconfig.host.json
+index 6dfe0a9d31..036f4abd96 100644
+--- a/tsconfig.host.json
++++ b/tsconfig.host.json
+@@ -306,6 +306,8 @@
+     { "path": "./packages/webhook/webhook-github" },
+     { "path": "./packages/todo/tool-todo" },
+     { "path": "./packages/plan/plan-mode" },
++    { "path": "./packages/plan/tool-plan-mode" },
++    { "path": "./packages/schedule/automations" },
+     { "path": "./packages/preset/agent-presets" },
+     { "path": "./packages/preset/persona" },
+     { "path": "./packages/guard/repeat-tool-reminder" },
+-- 
+2.43.0
+

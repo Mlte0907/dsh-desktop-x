@@ -1,0 +1,12 @@
+# Dependencies (344M — never commit)
+node_modules/
+
+# Build output — both are fully reproducible from source:
+#   dist/  = tsc + copy-assets
+#   build/ = icons rendered by scripts/build-icons.mjs from an inline SVG
+# Regenerate everything with `npm run build`.
+dist/
+build/
+
+# AI tooling working state (findings/history/hooks), not project source
+.mimosa/

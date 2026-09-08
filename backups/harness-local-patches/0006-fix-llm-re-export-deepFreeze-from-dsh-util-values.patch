@@ -1,0 +1,29 @@
+From 130578a3382dd9d81a18292f9904121679b11c38 Mon Sep 17 00:00:00 2001
+From: xiaoxin <xiaoxin@deepseek-harness.local>
+Date: Wed, 2 Sep 2026 21:19:23 +0800
+Subject: [PATCH 6/6] fix(llm): re-export deepFreeze from dsh-util-values
+
+oss-prompt-optimizer imports deepFreeze from @deepseek-ai/dsh-llm; the
+module used it internally but never exported it, so the plugin's import
+failed. Re-export the util-values implementation (same function the llm
+package already calls internally).
+---
+ packages/llm/llm/src/index.ts | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/packages/llm/llm/src/index.ts b/packages/llm/llm/src/index.ts
+index cdecc4c96e..a877cc747c 100644
+--- a/packages/llm/llm/src/index.ts
++++ b/packages/llm/llm/src/index.ts
+@@ -44,6 +44,8 @@ export * from './message.ts'
+ export * from './retry-policy.ts'
+ export { BlockAssembler } from './assembler.ts'
+ export { callConfigEquals, isAgentLoopRequest, markAgentLoopRequest } from './call-config.ts'
++/** Deep-freeze a plain value tree; re-exported for plugin consumers (e.g. oss-prompt-optimizer). */
++export { deepFreeze } from '@deepseek-ai/dsh-util-values'
+ export type { LlmCallConfig, LlmCallConfigAdapterDefaults } from './call-config.ts'
+ 
+ declare module '@deepseek-ai/cordis' {
+-- 
+2.43.0
+

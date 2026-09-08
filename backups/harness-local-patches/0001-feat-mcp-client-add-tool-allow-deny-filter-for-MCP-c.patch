@@ -1,0 +1,241 @@
+From 662c1a892a54d137331f62b03e068eae45483d04 Mon Sep 17 00:00:00 2001
+From: xiaoxin <xiaoxin@deepseek-harness.local>
+Date: Mon, 31 Aug 2026 15:50:39 +0800
+Subject: [PATCH 1/6] feat(mcp-client): add tool allow/deny filter for MCP
+ connections
+
+Add per-connection tool filtering via tools.allow/deny patterns in
+McpConnectionOptions. Filters are applied during tool resolution so
+connections can restrict which tools they expose without modifying
+the remote server.
+
+Tests: 109/109 passing.
+---
+ packages/mcp/mcp-client/src/connection.ts   |  1 +
+ packages/mcp/mcp-client/src/index.ts        | 15 ++++-
+ packages/mcp/mcp-client/src/tools.ts        | 28 ++++++++
+ packages/mcp/mcp-client/tests/apply.spec.ts | 71 +++++++++++++++++++++
+ 4 files changed, 114 insertions(+), 1 deletion(-)
+
+diff --git a/packages/mcp/mcp-client/src/connection.ts b/packages/mcp/mcp-client/src/connection.ts
+index f452e3a81d..0f4dc33dfd 100644
+--- a/packages/mcp/mcp-client/src/connection.ts
++++ b/packages/mcp/mcp-client/src/connection.ts
+@@ -126,6 +126,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
+     registrationFailure: 'contain',
+     serverName: config.serverName,
+     toolCallTimeoutMs: config.toolCallTimeoutMs,
++    ...(config.tools !== undefined ? { tools: config.tools } : {}),
+   }
+   // The initial sync uses 'throw' when failOnStartupError is configured, so
+   // a registration conflict propagates to the startup-await path. Re-syncs
+diff --git a/packages/mcp/mcp-client/src/index.ts b/packages/mcp/mcp-client/src/index.ts
+index 59ef928751..b3a8933a08 100644
+--- a/packages/mcp/mcp-client/src/index.ts
++++ b/packages/mcp/mcp-client/src/index.ts
+@@ -19,10 +19,11 @@ import { scopeOf } from '@deepseek-ai/dsh-scope'
+ import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+ import { RECONNECT_DEFAULTS, resolveReconnectPolicy, startConnection } from './connection.ts'
+ import type { ReconnectConfig } from './connection.ts'
++import type { ToolFilter } from './tools.ts'
+ // Side-effect type import: declaration-merges `ctx.tools` onto Context.
+ import type {} from '@deepseek-ai/dsh-tools'
+ 
+-export type { McpResult } from './tools.ts'
++export type { McpResult, ToolFilter } from './tools.ts'
+ export type { ReconnectConfig, ResolvedReconnectPolicy } from './connection.ts'
+ 
+ /** Cordis plugin name used by loader diagnostics. */
+@@ -70,6 +71,8 @@ export interface StdioConfig {
+   failOnStartupError: boolean
+   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
+   reconnect?: ReconnectConfig
++  /** Filter which tools to register. */
++  tools?: ToolFilter
+ }
+ 
+ /** Config for connecting to an MCP server over Streamable HTTP (SSE). */
+@@ -92,6 +95,8 @@ export interface StreamableHttpConfig {
+   failOnStartupError: boolean
+   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
+   reconnect?: ReconnectConfig
++  /** Filter which tools to register. */
++  tools?: ToolFilter
+ }
+ 
+ /** Configuration for one stdio or Streamable HTTP MCP server. */
+@@ -110,6 +115,12 @@ const Reconnect: z<ReconnectConfig> = z.object({
+   maxAttempts: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(RECONNECT_DEFAULTS.maxAttempts),
+ })
+ 
++/** Selection of discovered tools to register; lists hold raw MCP tool names. */
++const Tools: z<ToolFilter> = z.object({
++  allow: z.array(String).default([]),
++  deny: z.array(String).default([]),
++})
++
+ export const Config = z.union([
+   z.object({
+     transport: z.const('stdio'),
+@@ -121,6 +132,7 @@ export const Config = z.union([
+     toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
+     failOnStartupError: z.boolean().default(false),
+     reconnect: Reconnect,
++    tools: Tools,
+   }),
+   z.object({
+     transport: z.const('streamable-http'),
+@@ -130,6 +142,7 @@ export const Config = z.union([
+     toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
+     failOnStartupError: z.boolean().default(false),
+     reconnect: Reconnect,
++    tools: Tools,
+   }),
+ ]) as unknown as z<ConfigInput, Config>
+ 
+diff --git a/packages/mcp/mcp-client/src/tools.ts b/packages/mcp/mcp-client/src/tools.ts
+index a580fd0c84..c414067cc4 100644
+--- a/packages/mcp/mcp-client/src/tools.ts
++++ b/packages/mcp/mcp-client/src/tools.ts
+@@ -26,12 +26,28 @@ import { assertSupportedJsonSchema } from '@deepseek-ai/dsh-tools'
+ import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
+ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+ 
++/**
++ * Filter selecting which discovered tools register on the harness.
++ * Lists hold raw MCP tool names (as `tools/list` reports them), never the
++ * public `mcp__<serverName>__` names. `allow` restricts registration to its
++ * members; `deny` excludes its members; when both are present, a tool
++ * registers only if it is allowed and not denied.
++ */
++export interface ToolFilter {
++  /** Whitelist: only register these raw tool names; omission or empty registers all. */
++  allow?: string[]
++  /** Blacklist: never register these raw tool names. */
++  deny?: string[]
++}
++
+ /** Resolved options relevant to tool bridging. */
+ export interface ToolBridgeOptions {
+   /** Whether a registry conflict is contained or rejects this synchronization. */
+   registrationFailure: 'contain' | 'throw'
+   serverName: string
+   toolCallTimeoutMs: number
++  /** Selection of discovered tools to register; omission registers all. */
++  tools?: ToolFilter
+ }
+ 
+ /** State for one sync generation: the current set of disposers keyed by public name. */
+@@ -148,11 +164,17 @@ export async function syncTools(
+   previous: ToolDisposers,
+ ): Promise<ToolDisposers> {
+   // Phase 1: fetch and build the next generation without touching the registry.
++  const allow = opts.tools?.allow?.length ? new Set(opts.tools.allow) : undefined
++  const deny = opts.tools?.deny?.length ? new Set(opts.tools.deny) : undefined
++  const matched = allow ? new Set<string>() : undefined
+   const definitions = new Map<string, ToolDefinition>()
+   let cursor: string | undefined
+   do {
+     const response = await listToolsUncached(client, cursor)
+     for (const tool of response.tools) {
++      if (allow && !allow.has(tool.name)) continue
++      if (deny?.has(tool.name)) continue
++      matched?.add(tool.name)
+       const publicName = publicToolName(opts.serverName, tool.name)
+       if (definitions.has(publicName)) {
+         throw new Error(
+@@ -173,6 +195,12 @@ export async function syncTools(
+     }
+     cursor = response.nextCursor
+   } while (cursor)
++  if (allow && matched && matched.size < allow.size) {
++    const missing = [...allow].filter(name => !matched.has(name))
++    ctx.logger.warn(
++      `mcp-client(${opts.serverName}): tools.allow names not offered by the server: ${missing.join(', ')}`,
++    )
++  }
+ 
+   // Phase 2: swap generations.
+   for (const dispose of previous.values()) dispose()
+diff --git a/packages/mcp/mcp-client/tests/apply.spec.ts b/packages/mcp/mcp-client/tests/apply.spec.ts
+index 1b1716e51b..87e4a4b0bb 100644
+--- a/packages/mcp/mcp-client/tests/apply.spec.ts
++++ b/packages/mcp/mcp-client/tests/apply.spec.ts
+@@ -412,3 +412,74 @@ describe('apply (plugin lifecycle)', () => {
+     expect(ctx.tools.get('mcp__web__remote')).toBeDefined()
+   })
+ })
++
++describe('apply (tool filter)', () => {
++  let ctx: Context
++
++  beforeEach(async () => {
++    vi.clearAllMocks()
++    mockConnect.mockResolvedValue(undefined)
++    mockClose.mockImplementation(function (this: { onclose?: () => void }) {
++      this.onclose?.()
++      return Promise.resolve()
++    })
++    mockListTools.mockResolvedValue({
++      tools: [
++        { name: 'keep', description: 'keep me', inputSchema: { type: 'object' } },
++        { name: 'drop', description: 'drop me', inputSchema: { type: 'object' } },
++      ],
++      nextCursor: undefined,
++    })
++    mockCallTool.mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] })
++    ctx = await mountRegistry()
++  })
++
++  it('Config schema materializes the tools filter', () => {
++    const resolved = ConfigSchema({
++      transport: 'stdio',
++      serverName: 'srv',
++      command: 'echo',
++      tools: { allow: ['keep'] },
++    } as never)
++    expect(resolved.tools).toEqual({ allow: ['keep'], deny: [] })
++  })
++
++  it('registers only tools on the allow list', async () => {
++    await apply(ctx, { ...stdioConfig, tools: { allow: ['keep'] } })
++
++    expect(ctx.tools.get('mcp__srv__keep')).toBeDefined()
++    expect(ctx.tools.get('mcp__srv__drop')).toBeUndefined()
++  })
++
++  it('excludes tools on the deny list', async () => {
++    await apply(ctx, { ...stdioConfig, tools: { deny: ['drop'] } })
++
++    expect(ctx.tools.get('mcp__srv__keep')).toBeDefined()
++    expect(ctx.tools.get('mcp__srv__drop')).toBeUndefined()
++  })
++
++  it('prefers deny over allow for a tool matching both lists', async () => {
++    await apply(ctx, { ...stdioConfig, tools: { allow: ['keep', 'drop'], deny: ['drop'] } })
++
++    expect(ctx.tools.get('mcp__srv__keep')).toBeDefined()
++    expect(ctx.tools.get('mcp__srv__drop')).toBeUndefined()
++  })
++
++  it('registers every tool when no filter is configured', async () => {
++    await apply(ctx, stdioConfig)
++
++    expect(ctx.tools.get('mcp__srv__keep')).toBeDefined()
++    expect(ctx.tools.get('mcp__srv__drop')).toBeDefined()
++  })
++
++  it('warns when an allow-listed name is not offered by the server', async () => {
++    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
++    await apply(ctx, { ...stdioConfig, tools: { allow: ['keep', 'ghost'] } })
++
++    expect(ctx.tools.get('mcp__srv__keep')).toBeDefined()
++    expect(ctx.tools.get('mcp__srv__ghost')).toBeUndefined()
++    expect(warn).toHaveBeenCalledWith(
++      expect.stringContaining('tools.allow names not offered by the server: ghost'),
++    )
++  })
++})
+-- 
+2.43.0
+

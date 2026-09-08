@@ -1,0 +1,183 @@
+From 0d8ef2253ba9632074ba97cb4586d586ef9705a9 Mon Sep 17 00:00:00 2001
+From: xiaoxin <xiaoxin@deepseek-harness.local>
+Date: Wed, 2 Sep 2026 17:56:58 +0800
+Subject: [PATCH 4/6] fix(local): compat-shim ctx.provide, settingsNamespace
+ export, pangu preset protocol
+
+- compat-shim: set apiProxy via ctx.provide instead of direct assignment
+  (cordis requires provide; 'cannot set property without provide')
+- settings: add settingsNamespace(name) export (validate + return namespace;
+  required by dsh-better-sidebar; matches register()/describe().ns semantics)
+- agent-presets: add pangu memory protocol to autonomous preset
+- apps/cli: drop dsh-agent-spine-demo / dsh-tool-subagent-report deps
+- ignore .mimosa session artifacts (add .mimosaignore tool config)
+---
+ .gitignore                                    |  1 +
+ .mimosaignore                                 |  6 +++++
+ apps/cli/package.json                         |  2 --
+ packages/compat/dsh-compat-shim/src/index.ts  | 17 +++++---------
+ .../presets/autonomous/agent.cordis.yml       | 22 ++++++++++++++++---
+ packages/settings/settings/src/index.ts       | 14 ++++++++++++
+ pnpm-lock.yaml                                |  6 -----
+ 7 files changed, 46 insertions(+), 22 deletions(-)
+ create mode 100644 .mimosaignore
+
+diff --git a/.gitignore b/.gitignore
+index d445628213..e7eadc9aa7 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -41,3 +41,4 @@ apps/web/dist/
+ worktrees/
+ .agents/worktrees/
+ .typert-*/
++.mimosa
+diff --git a/.mimosaignore b/.mimosaignore
+new file mode 100644
+index 0000000000..a62aa84ee5
+--- /dev/null
++++ b/.mimosaignore
+@@ -0,0 +1,6 @@
++node_modules/
++dist/
++build/
++.git/
++*.log
++pnpm-lock.yaml
+diff --git a/apps/cli/package.json b/apps/cli/package.json
+index 18831a5ab2..59d2de45e2 100644
+--- a/apps/cli/package.json
++++ b/apps/cli/package.json
+@@ -101,7 +101,6 @@
+     "@agentclientprotocol/sdk": "1.4.0",
+     "@deepseek-ai/dsh-acp": "workspace:^",
+     "@deepseek-ai/dsh-agent": "workspace:^",
+-    "@deepseek-ai/dsh-agent-spine-demo": "workspace:^",
+     "@deepseek-ai/dsh-attachment-local": "workspace:^",
+     "@deepseek-ai/dsh-bash-local": "workspace:^",
+     "@deepseek-ai/dsh-credentials-local": "workspace:^",
+@@ -135,7 +134,6 @@
+     "@deepseek-ai/dsh-subprocess-local": "workspace:^",
+     "@deepseek-ai/dsh-system-prompt": "workspace:^",
+     "@deepseek-ai/dsh-tools": "workspace:^",
+-    "@deepseek-ai/dsh-tool-subagent-report": "workspace:^",
+     "@deepseek-ai/dsh-user-approval": "workspace:^",
+     "@types/js-yaml": "^4.0.9",
+     "@types/ws": "8.18.1",
+diff --git a/packages/compat/dsh-compat-shim/src/index.ts b/packages/compat/dsh-compat-shim/src/index.ts
+index 82cc1e3542..7b38bc9571 100644
+--- a/packages/compat/dsh-compat-shim/src/index.ts
++++ b/packages/compat/dsh-compat-shim/src/index.ts
+@@ -161,15 +161,10 @@ function createApiProxy(ctx) {
+ }
+ 
+ export function apply(ctx) {
+-  // Provide the apiProxy service for old plugins
+-  ctx.effect(() => {
+-    // @ts-ignore - providing legacy service
+-    ctx.apiProxy = createApiProxy(ctx)
+-    console.log('[dsh-compat-shim] apiProxy service registered')
+-
+-    return () => {
+-      // @ts-ignore
+-      ctx.apiProxy = undefined
+-    }
+-  }, 'dsh-compat-shim: apiProxy service')
++  // Provide the apiProxy service for old plugins (host-side plugin).
++  // Must be registered at the top level of apply (not inside a nested
++  // ctx.effect) so cordis binds the service to this plugin's fiber.
++  const dispose = ctx.provide('apiProxy', createApiProxy(ctx))
++  console.log('[dsh-compat-shim] apiProxy service registered')
++  return dispose
+ }
+diff --git a/packages/preset/agent-presets/presets/autonomous/agent.cordis.yml b/packages/preset/agent-presets/presets/autonomous/agent.cordis.yml
+index 7ad619efe5..3c9170d4df 100644
+--- a/packages/preset/agent-presets/presets/autonomous/agent.cordis.yml
++++ b/packages/preset/agent-presets/presets/autonomous/agent.cordis.yml
+@@ -54,6 +54,25 @@
+       You are an autonomous coding agent powered by the {{model}} model, running on the DeepSeek Harness. Your working directory is {{cwd}}.
+ 
+ 
++      ## Mandatory protocol: Pangu memory (when mcp__pangu__ tools are available)
++
++
++      This is a hard gate, not a suggestion. Execute before ANY other work:
++
++
++      1. **Session start:** Your FIRST action must be `mcp__pangu__pangu_search_memories` with a query derived from the user's message. No exceptions — even for simple tasks. Search, then briefly note relevant findings before proceeding.
++
++      2. **After completing meaningful work:** Write durable lessons with `mcp__pangu__pangu_add_memory`. Capture: what was learned, what broke and why, what to do differently next time. Skip trivial one-off actions.
++
++      3. **Before ending the session:** Check if anything worth remembering was learned; if so, write it.
++
++
++      When these tools are not available, skip silently.
++
++
++      ## Operating rules
++
++
+       Operating stance. You are operating autonomously: the user is not watching in real time and cannot answer questions mid-task. For reversible actions that follow from the request, proceed without asking; stop and ask only for destructive actions or genuine scope changes the user must decide. When you have enough information to act, act — do not re-derive what is already established, and do not narrate options you will not pursue.
+ 
+ 
+@@ -69,9 +88,6 @@
+       Communicate results, not process. Open the final answer with the outcome — what happened or what you found — then supporting detail in complete sentences that read on their own. Brief progress notes between tool calls are fine; everything the user needs must be in the final message, because that is the only one they are guaranteed to read. Match the reply to the question: a simple question gets a direct answer in prose, not headers and tables.
+ 
+ 
+-      Learn across sessions. This preset carries the Pangu memory server (the `mcp__pangu__` tools) when the deployment enables it. At the start of a substantive task, search it with `mcp__pangu__pangu_search_memories` (or any `mcp__pangu__pangu_*` search tool the catalog offers) for what you already know about this project — prior decisions, pitfalls, conventions — and fold what you find into the plan. Before finishing a session that learned something durable, write it back with `mcp__pangu__pangu_add_memory`: what was learned, what broke and why, what to do differently next time. Record lessons that would change future work, not a running commentary — a memory full of noise is a memory nobody trusts.
+-
+-
+       ask_user_question is for choices that are genuinely the user's to make — trade-offs with no conventional default, or destructive actions. Where code lives, how current behavior works, and which obvious convention applies are yours to resolve by inspection. Plan mode is how approval becomes a gate instead of a phrase: before starting non-trivial implementation work, switch the session into plan mode with enter_plan_mode, ground the plan in inspection, and present it through exit_plan_mode — implementation starts only after approval. A plan the user has not approved is not permission to implement.
+ 
+ - id: agent-instructions
+diff --git a/packages/settings/settings/src/index.ts b/packages/settings/settings/src/index.ts
+index 232364b4e8..313f57c35a 100644
+--- a/packages/settings/settings/src/index.ts
++++ b/packages/settings/settings/src/index.ts
+@@ -42,6 +42,20 @@ function parseSettingsNamespace(value: string): SettingsNamespace {
+   return value as SettingsNamespace
+ }
+ 
++/**
++ * Validate a namespace name and return it as a {@link SettingsNamespace}.
++ * Plugins owning their own settings section call this once with a stable
++ * name (e.g. the plugin id) and pass the result to
++ * `settings.register(ns, schema)`; the returned value compares equal to the
++ * `ns` field of the `settings.describe()` descriptor for that section.
++ * @param name - namespace candidate: `/^[a-z][a-z0-9-]*$/` (plugin ids fit).
++ * @returns the validated namespace value.
++ * @throws {TypeError} when `name` does not match the namespace pattern.
++ */
++export function settingsNamespace(name: string): SettingsNamespace {
++  return parseSettingsNamespace(name)
++}
++
+ /** When a namespace's changes take effect for its owner. */
+ export type SettingsApplies = 'live' | 'restart'
+ 
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 7d690633fb..8655753cd0 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -367,9 +367,6 @@ importers:
+       '@deepseek-ai/dsh-experimental-agent-team-profile':
+         specifier: workspace:^
+         version: link:../../packages/experimental/agent-team-profile
+-      '@deepseek-ai/dsh-experimental-code-runtime-python':
+-        specifier: workspace:^
+-        version: link:../../packages/experimental/code-runtime-python
+       '@deepseek-ai/dsh-experimental-tool-agent-team':
+         specifier: workspace:^
+         version: link:../../packages/experimental/tool-agent-team
+@@ -433,9 +430,6 @@ importers:
+       '@deepseek-ai/dsh-settings-file':
+         specifier: workspace:^
+         version: link:../../packages/settings/settings-file
+-      '@deepseek-ai/dsh-shell-env':
+-        specifier: workspace:^
+-        version: link:../../packages/shell/shell-env
+       '@deepseek-ai/dsh-subagent':
+         specifier: workspace:^
+         version: link:../../packages/subagent/subagent
+-- 
+2.43.0
+

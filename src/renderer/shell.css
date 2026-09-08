@@ -1,0 +1,335 @@
+:root {
+  --bg: #0b0d12;
+  --chrome: #0e1116;
+  --line: rgba(255, 255, 255, 0.07);
+  --text: #e7e9ef;
+  --muted: #878da0;
+  --accent: #4d6bfe;
+  --online: #35c26b;
+  --starting: #e0a33a;
+  --offline: #6b7183;
+  --error: #e0574d;
+  --titlebar-h: 38px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans CJK SC', 'Noto Sans SC',
+    'PingFang SC', 'Microsoft YaHei', Roboto, sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+}
+
+/* ── Title bar ─────────────────────────────────────────────────────────── */
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--titlebar-h);
+  min-height: var(--titlebar-h);
+  padding-left: 12px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--line);
+  /* The whole bar drags the frameless window; buttons opt back out below. */
+  -webkit-app-region: drag;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.whale {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.whale path {
+  fill: var(--accent);
+}
+
+.whale.large {
+  width: 46px;
+  height: 46px;
+  opacity: 0.9;
+}
+
+.title {
+  font-size: 12.5px;
+  font-weight: 550;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trailing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  -webkit-app-region: no-drag;
+}
+
+/* Backend health, always visible — the tray is only reachable when hidden. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  margin-right: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.pill .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--offline);
+}
+
+.pill[data-phase='online'] .dot {
+  background: var(--online);
+  box-shadow: 0 0 6px rgba(53, 194, 107, 0.6);
+}
+
+.pill[data-phase='starting'] .dot,
+.pill[data-phase='probing'] .dot {
+  background: var(--starting);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+
+.pill[data-phase='error'] .dot {
+  background: var(--error);
+}
+
+.pill[data-phase='online'] {
+  color: #b9f0cd;
+}
+
+.pill[data-phase='error'] {
+  color: #f4bdb8;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.actions {
+  display: flex;
+}
+
+.actions button {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: var(--titlebar-h);
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.actions button:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+
+.actions button.close:hover {
+  background: var(--error);
+  color: #fff;
+}
+
+.actions svg {
+  width: 10px;
+  height: 10px;
+}
+
+.actions svg path {
+  fill: currentColor;
+}
+
+.actions button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ── Stage ─────────────────────────────────────────────────────────────── */
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--bg);
+}
+
+#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  /* The remote page paints its own background; keep the gap invisible. */
+  background: var(--bg);
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  transition: opacity 0.22s ease;
+}
+
+.overlay[hidden] {
+  display: grid;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 460px;
+  padding: 0 24px;
+  text-align: center;
+}
+
+.card h1 {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 550;
+  letter-spacing: 0.2px;
+}
+
+.sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.bar {
+  position: relative;
+  width: 220px;
+  height: 2px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.bar i {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  animation: slide 1.2s ease-in-out infinite;
+}
+
+@keyframes slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+/* Verbose backend output is the only progress signal during a ~5s cold boot;
+   keep it to one clipped line so the card never changes height. */
+.logline {
+  width: 100%;
+  max-width: 420px;
+  height: 16px;
+  margin: 0;
+  color: #5d6376;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cta {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.cta button {
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.cta button:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.cta button.primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: #fff;
+}
+
+.cta button.primary:hover {
+  filter: brightness(1.1);
+}
+
+/* Error and auth-wall states stop the indeterminate bar: there is no
+   progress to report, and motion would imply the app is still working. */
+.overlay[data-tone='error'] .bar,
+.overlay[data-tone='auth'] .bar {
+  visibility: hidden;
+}
+
+.overlay[data-tone='error'] .whale.large path {
+  fill: var(--error);
+}
+
+.overlay[data-tone='auth'] .whale.large path {
+  fill: var(--starting);
+}
