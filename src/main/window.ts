@@ -103,7 +103,7 @@ export class ShellWindow {
     this.registerLifecycle()
 
     void this.win.loadFile(join(__dirname, '..', 'renderer', 'shell.html')).catch((error: unknown) => {
-      console.error('dsh-desktop: failed to load shell', error)
+      console.error('dsh-desktop-x: failed to load shell', error)
     })
 
     // Show only once the local chrome has painted. Waiting for the remote page
@@ -203,11 +203,11 @@ export class ShellWindow {
       // Failed backend calls would otherwise vanish inside a cross-origin
       // frame the shell cannot inspect.
       if (details.statusCode >= 400) {
-        console.log(`dsh-desktop: ${details.method} ${details.url} → ${details.statusCode}`)
+        console.log(`dsh-desktop-x: ${details.method} ${details.url} → ${details.statusCode}`)
       }
     })
     sess.webRequest.onErrorOccurred(filter, (details) => {
-      console.log(`dsh-desktop: ${details.method ?? 'GET'} ${details.url} → ERROR ${details.error}`)
+      console.log(`dsh-desktop-x: ${details.method ?? 'GET'} ${details.url} → ERROR ${details.error}`)
     })
   }
 

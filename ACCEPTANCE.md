@@ -20,7 +20,7 @@
                 │ detached + unref
                 ▼
 dsh web 后端（node，独立进程组，~358MB PSS）
- └─ systemd user unit dsh-web.service（enabled，登录自启）
+ └─ systemd user unit dsh-desktop-x.service（enabled，登录自启）
 ```
 
 与初版相比的四个关键架构决策（均有实测依据，见第三节）：
@@ -79,7 +79,7 @@ DISPLAY=:0 nohup $E $R >/dev/null 2>&1 & sleep 12
 # 通过 UI/IPC 触发停止后端后：
 pgrep -af 'bin.js web'   # 预期：无输出（后端停了）
 pgrep -cf "$R"           # 预期：>0（前端还在）
-systemctl --user start dsh-web.service   # 测完恢复
+systemctl --user start dsh-desktop-x.service   # 测完恢复
 ```
 
 ### issues.md #7 — pid 复用误杀【成立 → 已修】
@@ -116,7 +116,7 @@ R=/home/xiaoxin/dsh-desktop-x
 DISPLAY=:0 nohup $E $R >/dev/null 2>&1 & sleep 12
 DISPLAY=:0 $E $R --quit; sleep 4
 pgrep -cf "$R" || echo 0   # 预期：0（全部收割）
-systemctl --user is-active dsh-web.service   # 预期：active（后端无恙）
+systemctl --user is-active dsh-desktop-x.service   # 预期：active（后端无恙）
 ```
 注意：**直接 `kill <前端主进程>` 仍会触发上述 Chromium 行为**（窗口隐藏、进程
 残留）——这是平台限制，退出请用托盘项或 `--quit`。README 已声明。
@@ -240,7 +240,7 @@ E=.../node_modules/electron/dist/electron; R=<项目根>
 DISPLAY=:0 $E $R >/dev/null 2>&1 & sleep 12      # 先起一个实例
 DISPLAY=:0 $E $R --quit; sleep 4
 pgrep -cf dsh-desktop-x                    # 预期：0
-systemctl --user is-active dsh-web.service        # 预期：active
+systemctl --user is-active dsh-desktop-x.service        # 预期：active
 ```
 
 ### 新发现 G — 会话列表显示"未分组"组名（UI 视图偏好，非 bug）【已澄清，2026-09-01 收尾】

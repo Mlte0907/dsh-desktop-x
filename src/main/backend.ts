@@ -274,7 +274,7 @@ export class BackendManager extends EventEmitter {
       const { code, output } = await systemctl(['--user', 'start', C.SYSTEMD_UNIT])
       if (code !== 0) {
         this.setStatus({ phase: 'error', detail: `systemd 启动失败：${output}` })
-        throw new Error(`dsh-desktop: systemctl start failed: ${output}`)
+        throw new Error(`dsh-desktop-x: systemctl start failed: ${output}`)
       }
       await this.waitForOnline(C.BACKEND_BOOT_TIMEOUT_MS)
     } else {
@@ -338,7 +338,7 @@ export class BackendManager extends EventEmitter {
         fn()
       }
       const timer = setTimeout(() => {
-        finish(() => reject(new Error(`dsh-desktop: backend did not become ready within ${C.BACKEND_BOOT_TIMEOUT_MS}ms`)))
+        finish(() => reject(new Error(`dsh-desktop-x: backend did not become ready within ${C.BACKEND_BOOT_TIMEOUT_MS}ms`)))
       }, C.BACKEND_BOOT_TIMEOUT_MS)
 
       let buffered = ''
@@ -373,7 +373,7 @@ export class BackendManager extends EventEmitter {
         finish(() => {
           const reason = stderrTail.trim() === '' ? `退出码 ${String(code)}` : stderrTail.trim().split(/\r?\n/u).at(-1)
           this.setStatus({ phase: 'error', detail: `后端启动失败：${reason ?? '未知原因'}` })
-          reject(new Error(`dsh-desktop: backend exited during startup (${reason ?? 'unknown'})`))
+          reject(new Error(`dsh-desktop-x: backend exited during startup (${reason ?? 'unknown'})`))
         })
       })
 
@@ -407,7 +407,7 @@ export class BackendManager extends EventEmitter {
       await new Promise((resolve) => setTimeout(resolve, 300))
     }
     this.setStatus({ phase: 'error', detail: '等待后端就绪超时' })
-    throw new Error('dsh-desktop: timed out waiting for the backend to accept connections')
+    throw new Error('dsh-desktop-x: timed out waiting for the backend to accept connections')
   }
 
   /** Background liveness check so the tray reflects reality, not optimism. */

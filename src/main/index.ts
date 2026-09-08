@@ -126,15 +126,15 @@ function toggleWindow(): void {
   if (shell === undefined || shell.win.isDestroyed()) return
   if (shell.win.isVisible()) {
     if (shell.win.isFocused()) {
-      console.log('dsh-desktop: toggle → hide (was visible+focused)')
+      console.log('dsh-desktop-x: toggle → hide (was visible+focused)')
       shell.win.hide()
     } else {
-      console.log('dsh-desktop: toggle → focus (visible, not focused)')
+      console.log('dsh-desktop-x: toggle → focus (visible, not focused)')
       shell.show()
     }
     return
   }
-  console.log('dsh-desktop: toggle → show (was hidden)')
+  console.log('dsh-desktop-x: toggle → show (was hidden)')
   shell.show()
 }
 
@@ -142,10 +142,10 @@ function registerShortcut(): void {
   // Not Ctrl+Alt+D: XFCE binds that to show-desktop.
   const accelerator = process.env.DSH_TOGGLE_ACCEL ?? 'Super+Shift+D'
   if (globalShortcut.register(accelerator, toggleWindow)) {
-    console.log(`dsh-desktop: toggle shortcut ${accelerator}`)
+    console.log(`dsh-desktop-x: toggle shortcut ${accelerator}`)
     return
   }
-  console.warn(`dsh-desktop: could not register ${accelerator}; set DSH_TOGGLE_ACCEL to another binding`)
+  console.warn(`dsh-desktop-x: could not register ${accelerator}; set DSH_TOGGLE_ACCEL to another binding`)
 }
 
 function quit(): void {
@@ -197,7 +197,7 @@ async function boot(): Promise<void> {
 
   // Background mode: skip window and tray creation, just run backend
   if (process.env.DSH_BACKGROUND_MODE === '1') {
-    console.log('dsh-desktop: background mode enabled, skipping UI')
+    console.log('dsh-desktop-x: background mode enabled, skipping UI')
     // Register shortcut even in background mode (optional, for wake-up)
     if (process.env.DSH_ENABLE_SHORTCUT !== '0') {
       registerShortcut()
@@ -208,7 +208,7 @@ async function boot(): Promise<void> {
 
   shell = await ShellWindow.create()
   shell.watchWebview(() => {
-    console.log('dsh-desktop: backend answered 401 — a token exchange is required')
+    console.log('dsh-desktop-x: backend answered 401 — a token exchange is required')
     shell?.notifyAuthWall()
   })
 
@@ -225,7 +225,7 @@ async function boot(): Promise<void> {
     tray.update(backend.getStatus())
   } catch (error) {
     // No systray (some X11 sessions): the window alone is still fully usable.
-    console.warn('dsh-desktop: tray unavailable:', errorMessage(error))
+    console.warn('dsh-desktop-x: tray unavailable:', errorMessage(error))
   }
 
   await connecting
@@ -285,7 +285,7 @@ if (!acquiredLock) {
 
 
   void boot().catch((error: unknown) => {
-    console.error('dsh-desktop: fatal', errorMessage(error))
+    console.error('dsh-desktop-x: fatal', errorMessage(error))
     _electron.app.quit()
   })
 }

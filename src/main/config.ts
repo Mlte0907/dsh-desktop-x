@@ -52,7 +52,7 @@ export const BACKEND_LOG = join(STATE_DIR, 'backend.log')
 export const BACKEND_STATE = join(STATE_DIR, 'backend.json')
 
 /** systemd user unit name (see scripts/install-system.sh). */
-export const SYSTEMD_UNIT = 'dsh-web.service'
+export const SYSTEMD_UNIT = 'dsh-desktop-x.service'
 
 export const BACKEND_HOST = env('DSH_WEB_HOST', '127.0.0.1')
 

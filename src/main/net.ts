@@ -30,7 +30,7 @@ export function request(target: string, options: RequestOptions = {}): Promise<H
     try {
       url = new URL(target)
     } catch {
-      reject(new Error(`dsh-desktop: not a URL: ${target}`))
+      reject(new Error(`dsh-desktop-x: not a URL: ${target}`))
       return
     }
     const req = httpRequest(
@@ -40,7 +40,7 @@ export function request(target: string, options: RequestOptions = {}): Promise<H
         port: url.port === '' ? 80 : Number(url.port),
         path: `${url.pathname}${url.search}`,
         method,
-        headers: { accept: 'text/html,*/*', 'user-agent': 'dsh-desktop/0.1' },
+        headers: { accept: 'text/html,*/*', 'user-agent': 'dsh-desktop-x/0.1' },
         timeout: timeoutMs,
       },
       (res) => {
@@ -56,7 +56,7 @@ export function request(target: string, options: RequestOptions = {}): Promise<H
         res.on('error', reject)
       },
     )
-    req.on('timeout', () => req.destroy(new Error(`dsh-desktop: request to ${target} timed out`)))
+    req.on('timeout', () => req.destroy(new Error(`dsh-desktop-x: request to ${target} timed out`)))
     req.on('error', reject)
     req.end()
   })

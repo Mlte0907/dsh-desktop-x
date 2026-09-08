@@ -26,12 +26,28 @@ for arg in "$@"; do
 done
 
 if [ "$UNINSTALL" = "1" ]; then
+  systemctl --user disable --now dsh-desktop-x.service 2>/dev/null || true
+  rm -f "$SYSTEMD_DIR/dsh-desktop-x.service"
+  rm -f "$APPS_DIR/dsh-desktop-x.desktop"
+  for s in 512 256 128 64 48; do rm -f "$ICON_DIR/${s}x${s}/apps/dsh-desktop-x.png"; done
+  # Legacy names from before the dsh-desktop-x rename (dsh-web.service /
+  # dsh-desktop.desktop / dsh-desktop.png). The unit may still be the one
+  # running the live backend, so stop it only here, where uninstall is meant
+  # to take the backend down.
   systemctl --user disable --now dsh-web.service 2>/dev/null || true
   rm -f "$SYSTEMD_DIR/dsh-web.service"
   rm -f "$APPS_DIR/dsh-desktop.desktop"
   for s in 512 256 128 64 48; do rm -f "$ICON_DIR/${s}x${s}/apps/dsh-desktop.png"; done
-  echo "已卸载 dsh-desktop"
+  echo "已卸载 dsh-desktop-x"
   exit 0
+fi
+
+# Migrate a pre-rename install: stop the legacy unit from coming back at the
+# next login, but never touch the running process — that may well be the
+# backend serving the live GUI right now.
+if [ -f "$SYSTEMD_DIR/dsh-web.service" ]; then
+  systemctl --user disable dsh-web.service 2>/dev/null || true
+  echo "→ 已停用旧单元 dsh-web.service（运行中的实例不受影响，重启后由 dsh-desktop-x.service 接管）"
 fi
 
 if [ ! -x "$NODE_BIN" ]; then echo "找不到 node：$NODE_BIN" >&2; exit 1; fi
@@ -42,37 +58,37 @@ echo "→ 编译 dsh-desktop-x"
 
 echo "→ 写入 .desktop 启动器"
 mkdir -p "$APPS_DIR"
-cat > "$APPS_DIR/dsh-desktop.desktop" <<EOF
+cat > "$APPS_DIR/dsh-desktop-x.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=DeepSeek Harness
 Comment=dsh web 桌面客户端（带托盘与后端管理）
 Exec=$ROOT/node_modules/electron/dist/electron $ROOT
-Icon=dsh-desktop
+Icon=dsh-desktop-x
 Terminal=false
 Categories=Development;Utility;
 StartupNotify=true
 StartupWMClass=DeepSeek Harness
 EOF
-chmod 0644 "$APPS_DIR/dsh-desktop.desktop"
+chmod 0644 "$APPS_DIR/dsh-desktop-x.desktop"
 
 echo "→ 写入图标（hicolor 256/512；托盘直接用 build/tray-*）"
 for pair in "512:app-icon.png" "256:app-icon-256.png"; do
   size="${pair%%:*}"
   src="${pair#*:}"
-  dest="$ICON_DIR/${size}x${size}/apps/dsh-desktop.png"
+  dest="$ICON_DIR/${size}x${size}/apps/dsh-desktop-x.png"
   mkdir -p "$(dirname "$dest")"
   cp "$ROOT/build/$src" "$dest"
 done
 for size in 128 64 48; do
-  dest="$ICON_DIR/${size}x${size}/apps/dsh-desktop.png"
+  dest="$ICON_DIR/${size}x${size}/apps/dsh-desktop-x.png"
   mkdir -p "$(dirname "$dest")"
   ( cd "$ROOT" && node --input-type=module -e "import sharp from 'sharp'; await sharp('build/app-icon-256.png').resize($size, $size).png().toFile('$dest')" )
 done
 
 echo "→ 写入 systemd user unit"
 mkdir -p "$SYSTEMD_DIR" "$LOG_DIR"
-cat > "$SYSTEMD_DIR/dsh-web.service" <<EOF
+cat > "$SYSTEMD_DIR/dsh-desktop-x.service" <<EOF
 [Unit]
 Description=DeepSeek Harness Web backend
 After=default.target
@@ -106,20 +122,20 @@ fi
 
 echo
 echo "✓ 已安装："
-echo "  $APPS_DIR/dsh-desktop.desktop"
-echo "  $SYSTEMD_DIR/dsh-web.service"
-echo "  $ICON_DIR/{256,512}x{256,512}/apps/dsh-desktop.png"
+echo "  $APPS_DIR/dsh-desktop-x.desktop"
+echo "  $SYSTEMD_DIR/dsh-desktop-x.service"
+echo "  $ICON_DIR/{256,512}x{256,512}/apps/dsh-desktop-x.png"
 if [ "$ENABLE" = "1" ]; then
   echo
-  echo "→ 启动并启用后端：dsh-web.service"
-  systemctl --user enable --now dsh-web.service
-  systemctl --user --no-pager --full status dsh-web.service | sed -n '1,8p' || true
+  echo "→ 启动并启用后端：dsh-desktop-x.service"
+  systemctl --user enable --now dsh-desktop-x.service
+  systemctl --user --no-pager --full status dsh-desktop-x.service | sed -n '1,8p' || true
 else
   echo
   echo "  启动后端："
-  echo "    systemctl --user enable --now dsh-web.service"
+  echo "    systemctl --user enable --now dsh-desktop-x.service"
   echo "  停用后端："
-  echo "    systemctl --user disable --now dsh-web.service"
+  echo "    systemctl --user disable --now dsh-desktop-x.service"
   echo "  卸载全部："
   echo "    bash $ROOT/scripts/install-system.sh --uninstall"
 fi

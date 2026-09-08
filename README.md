@@ -95,7 +95,7 @@ as the auth wall.
 | Source of truth | How `BackendManager` decides |
 |---|---|
 | State file `~/.dsh/desktop/backend.json` (this shell's spawn) | `pid` checked with `kill -0`. |
-| systemd user unit `dsh-web.service` | `systemctl --user is-enabled` and `is-active`. |
+| systemd user unit `dsh-desktop-x.service` | `systemctl --user is-enabled` and `is-active`. |
 | Anything else | Falls through to `external`. |
 
 Stop is symmetric: only a backend the shell can account for is touched
@@ -123,11 +123,11 @@ Writes (no sudo required):
 
 | Path | Purpose |
 |---|---|
-| `~/.local/share/applications/dsh-desktop.desktop` | XFCE menu / file-manager launcher |
-| `~/.local/share/icons/hicolor/{48,64,128,256,512}x*/apps/dsh-desktop.png` | hicolor icon theme |
-| `~/.config/systemd/user/dsh-web.service` | `dsh web` backend, auto-start on login, appends to `~/.dsh/desktop/backend.log` |
+| `~/.local/share/applications/dsh-desktop-x.desktop` | XFCE menu / file-manager launcher |
+| `~/.local/share/icons/hicolor/{48,64,128,256,512}x*/apps/dsh-desktop-x.png` | hicolor icon theme |
+| `~/.config/systemd/user/dsh-desktop-x.service` | `dsh web` backend, auto-start on login, appends to `~/.dsh/desktop/backend.log` |
 
-`--enable` additionally runs `systemctl --user enable --now dsh-web.service`
+`--enable` additionally runs `systemctl --user enable --now dsh-desktop-x.service`
 so the backend is up before the shell ever opens. To uninstall:
 
 ```bash
