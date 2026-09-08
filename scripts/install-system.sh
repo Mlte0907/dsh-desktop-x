@@ -68,7 +68,7 @@ Icon=dsh-desktop-x
 Terminal=false
 Categories=Development;Utility;
 StartupNotify=true
-StartupWMClass=DeepSeek Harness
+StartupWMClass=dsh-desktop-x
 EOF
 chmod 0644 "$APPS_DIR/dsh-desktop-x.desktop"
 
