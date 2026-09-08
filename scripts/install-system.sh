@@ -81,7 +81,7 @@ After=default.target
 Type=simple
 # Session history is grouped by the backend's working directory
 # (~/.dsh/sessions/--home-xiaoxin--/...), so it must match where the user's
-# own `dsh web` runs from — the checkout would show an empty history.
+# own \`dsh web\` runs from — the checkout would show an empty history.
 WorkingDirectory=$HOME
 ExecStart=$NODE_BIN $HARNESS_ROOT/apps/cli/lib/bin.js web --no-open
 Environment=DSH_HOME=$DSH_HOME
